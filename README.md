@@ -25,6 +25,12 @@ server/utils/reports.ts        # shared filter + query
 .dev.vars.example          # local secrets template (copy to .dev.vars)
 ```
 
+## Deployment
+
+Live at `https://delegator-report.dariovp01.workers.dev` (workers.dev, free tier). D1 database
+`delegator-report`, id in `wrangler.toml`. Secrets were pushed from `.prod.vars`, which is not
+in git; keep a copy in a password manager.
+
 ## Setup
 
 ```sh
@@ -75,8 +81,9 @@ Other scripts: `build`, `typecheck`, `lint`, `lint:fix`, `fmt`, `fmt:check`, `ch
 Tooling: pnpm (pinned via `packageManager`), oxlint (`.oxlintrc.json`), oxfmt (`.oxfmtrc.json`).
 Run `pnpm check` before opening a PR.
 
-Schema changes: nothing is deployed yet, so edit `schema.sql` in place and run
-`pnpm db:reset:local`. Start a `migrations/` folder with the first deploy.
+Schema changes: the deployed baseline is `docs/schema/0001-20261031.sql`. From here, a change to `schema.sql` needs a matching migration file
+applied to the remote D1 with `wrangler d1 execute --remote`; local dev still uses
+`pnpm db:reset:local`.
 
 ### Schema history
 

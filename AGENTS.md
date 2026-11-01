@@ -14,7 +14,7 @@ Read `README.md` for the endpoint contract.
 - `server/components/`: layout and page components. Routes render them through `html()` in `server/utils/html.ts`.
 - `src/app.css`: Tailwind entry and design tokens. Retheme here, not in components.
 - `server/utils/reports.ts`: row types, the shared `since`/`limit`/`buildId`/`untriaged` filter and query, batched child-row loaders (`occurrencesFor`, `eventsFor`), and `breakdown`. Add a list param here, never in a route.
-- `schema.sql`: the whole schema. Nothing is deployed, so change it in place; no migrations until the first deploy. After a change: `pnpm db:reset:local`, `pnpm schema:snapshot <label>`, then `pnpm erd` and update the diagram in `README.md` and `docs/erd.mmd`.
+- `schema.sql`: the whole schema, for fresh databases. The Worker is deployed, so a schema change also needs `migrations/NNNN-<label>.sql` with the ALTER statements for the remote D1. After a change: `pnpm db:reset:local`, `pnpm schema:snapshot <label>`, `pnpm schema:diff` to derive the migration, then `pnpm erd` and update the diagram in `README.md` and `docs/erd.mmd`.
 - `scripts/`: Node-only TypeScript (own `tsconfig.json`, `@types/node`). Never imported by the Worker.
 - `wrangler.toml`: bindings and compat date. Secrets (`REPORT_TOKEN`, `READ_TOKEN`, `WRITE_TOKEN`) never go here.
 
@@ -28,7 +28,7 @@ Read `README.md` for the endpoint contract.
 - ETags come from `versionTag(db, format)`. When a route's output shape or markup changes, bump that route's format constant, or feed readers keep their cached copy.
 - HTML routes return `html(event, <Component/>)`. Text goes through JSX children so it is escaped; `dangerouslySetInnerHTML` is never used.
 - Compat date in `nitro.config.ts` must stay at or after 2025-08-01. Nitro parses it in local time; at exactly 2025-07-15 dev mode silently loses the Cloudflare bindings proxy.
-- Never run `wrangler deploy`, `wrangler d1 create`, `secret put`, or any `--remote` script unless the user asks for that deploy.
+- Never run `wrangler deploy`, `wrangler d1 create`, `secret put`/`secret bulk`, or any `--remote` script unless the user asks for that deploy. The Worker is live; a deploy is a production change.
 - Never commit unless the user asks. Leave work as working-tree changes.
 
 ## Development cycle
@@ -42,6 +42,6 @@ Run this loop before opening a PR. A step is done when its command exits 0.
 5. **Worker runtime green.** `pnpm build && pnpm preview`, repeat the key `curl` on `http://localhost:8787`. `nitro dev` runs on Node; this runs on workerd and catches runtime differences.
 6. **`pnpm check` green.** Typecheck, oxlint, oxfmt. Fix with `pnpm lint:fix` and `pnpm fmt`.
 7. **Docs current.** If the endpoint contract, params, scripts, or schema changed, the matching section of `README.md` says so.
-8. **PR.** Draft PR against `main`. Body: what changed, the `curl` commands from step 4 with their output, and whether `schema.sql` changed.
+8. **PR.** Draft PR against `main`. Body: what changed, the `curl` commands from step 4 with their output, and the migration file if `schema.sql` changed.
 
 Working tree stays uncommitted until the user asks for a commit.

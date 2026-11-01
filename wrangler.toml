@@ -3,12 +3,10 @@ main = "./.output/server/index.mjs"
 compatibility_date = "2025-10-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Create with: npx wrangler d1 create delegator-report
-# Then paste the returned database_id below.
 [[d1_databases]]
 binding = "DB"
 database_name = "delegator-report"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "879a1a52-c5b8-4983-aa35-accddaed0b91"
 
 [observability]
 enabled = true
