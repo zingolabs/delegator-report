@@ -36,10 +36,12 @@ pnpm wrangler d1 create delegator-report
 # 2. Apply the schema (remote). Idempotent; re-run after schema changes.
 pnpm db:init
 
-# 3. Set the three tokens (long random values)
-openssl rand -hex 32 | pnpm wrangler secret put REPORT_TOKEN   # shipped in the app; create-only
-openssl rand -hex 32 | pnpm wrangler secret put READ_TOKEN     # feed, page, JSON
-openssl rand -hex 32 | pnpm wrangler secret put WRITE_TOKEN    # triage
+# 3. Generate the three tokens into a gitignored file, then push them as Worker secrets
+printf 'REPORT_TOKEN=%s\nREAD_TOKEN=%s\nWRITE_TOKEN=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .prod.vars
+pnpm secrets:push          # wrangler secret bulk .prod.vars
+# REPORT_TOKEN ships in the app (create-only); READ_TOKEN for feed/page/JSON; WRITE_TOKEN for triage.
+# Keep .prod.vars in a password manager too; wrangler never shows secrets again.
 
 # 4. Deploy
 pnpm deploy

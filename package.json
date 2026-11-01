@@ -16,6 +16,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
+    "secrets:push": "wrangler secret bulk .prod.vars",
     "db:init": "wrangler d1 execute delegator-report --remote --file=./schema.sql",
     "db:init:local": "wrangler d1 execute delegator-report --local --file=./schema.sql",
     "db:seed:local": "wrangler d1 execute delegator-report --local --file=./seed.sql",
