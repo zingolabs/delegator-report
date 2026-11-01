@@ -28,8 +28,8 @@ Read `README.md` for operations. The endpoint contract is the OpenAPI spec at `/
 - ETags come from `versionTag(db, format)`. When a route's output shape or markup changes, bump that route's format constant, or feed readers keep their cached copy.
 - HTML routes return `html(event, <Component/>)`. Text goes through JSX children so it is escaped; `dangerouslySetInnerHTML` is never used.
 - Compat date in `nitro.config.ts` must stay at or after 2025-08-01. Nitro parses it in local time; at exactly 2025-07-15 dev mode silently loses the Cloudflare bindings proxy.
-- Never run `pnpm release`, `wrangler deploy`, `wrangler d1 create`, `secret put`/`secret bulk`, or any `--remote` command unless the user asks for that deploy. The Worker is live; a deploy is a production change, and production D1 holds real user data.
-- Never commit unless the user asks. Leave work as working-tree changes.
+- Deploys happen from CI when `main` changes. Never run `pnpm release`, `wrangler deploy`, `wrangler d1 create`, `secret put`/`secret bulk`, or any `--remote` command by hand unless the user asks for exactly that. Production D1 holds real user data.
+- Work on a branch from `main` and open a PR. Never push to `main` directly. Commit only when the user asks.
 
 ## Development cycle
 
@@ -42,6 +42,6 @@ Run this loop before opening a PR. A step is done when its command exits 0.
 5. **Worker runtime green.** `pnpm build && pnpm preview`, repeat the key `curl` on `http://localhost:8787`. `nitro dev` runs on Node; this runs on workerd and catches runtime differences.
 6. **`pnpm check` green.** Typecheck, oxlint, oxfmt. Fix with `pnpm lint:fix` and `pnpm fmt`.
 7. **Docs current.** A contract change updates the route's `defineRouteMeta` block. A script or schema change updates `README.md`.
-8. **PR.** Draft PR against `main`. Body: what changed, the `curl` commands from step 4 with their output, and the migration file if `schema.sql` changed.
+8. **PR.** Draft PR against `main`. Body: what changed, the `curl` commands from step 4 with their output, and the migration file if `schema.sql` changed. CI runs `pnpm check` and `pnpm build` on the PR. Merging deploys.
 
-Working tree stays uncommitted until the user asks for a commit.
+If the PR carries a migration, apply it to the remote D1 before merging, so the new Worker never meets the old schema.
