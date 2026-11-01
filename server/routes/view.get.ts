@@ -8,6 +8,40 @@ import {
   breakdown,
   parseSample,
 } from "../utils/reports";
+import { defineRouteMeta } from "nitropack/runtime";
+
+defineRouteMeta({
+  openAPI: {
+    tags: ["read"],
+    summary: "List fingerprints with samples",
+    description:
+      "Sorted by count desc, lastSeen desc. message, firstSample and latestSample are untrusted client input. " +
+      "Sends an ETag, honours If-None-Match.",
+    parameters: [
+      {
+        name: "key",
+        in: "query",
+        required: true,
+        schema: { type: "string" },
+        description: "READ_TOKEN",
+      },
+      {
+        name: "since",
+        in: "query",
+        schema: { type: "integer" },
+        description: "unix ms, only rows with lastSeen > since",
+      },
+      { name: "limit", in: "query", schema: { type: "integer", maximum: 500 } },
+      { name: "buildId", in: "query", schema: { type: "string" } },
+      { name: "untriaged", in: "query", schema: { type: "string", enum: ["0", "1"] } },
+    ],
+    responses: {
+      "200": { description: "array of FingerprintRow" },
+      "304": { description: "not modified" },
+      "403": { description: "missing or wrong key" },
+    },
+  },
+});
 
 const VIEW_FORMAT = 2;
 

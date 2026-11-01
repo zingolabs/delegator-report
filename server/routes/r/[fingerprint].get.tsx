@@ -3,6 +3,37 @@ import { useEnv, checkKey } from "../../utils/env";
 import { occurrencesFor, eventsFor, type ReportRow } from "../../utils/reports";
 import { html } from "../../utils/html";
 import { ReportPage } from "../../components/report-page";
+import { defineRouteMeta } from "nitropack/runtime";
+
+defineRouteMeta({
+  openAPI: {
+    tags: ["read"],
+    summary: "HTML page for one fingerprint",
+    description: "The link target of a feed entry. Static HTML, no scripts.",
+    parameters: [
+      {
+        name: "fingerprint",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+        description: "64-char hex sha-256",
+      },
+      {
+        name: "key",
+        in: "query",
+        required: true,
+        schema: { type: "string" },
+        description: "READ_TOKEN",
+      },
+    ],
+    responses: {
+      "200": { description: "text/html" },
+      "400": { description: "bad fingerprint" },
+      "403": { description: "missing or wrong key" },
+      "404": { description: "unknown fingerprint" },
+    },
+  },
+});
 
 /** Per-fingerprint page. READ_TOKEN; the feed's entry links carry it. */
 export default defineEventHandler(async (event) => {

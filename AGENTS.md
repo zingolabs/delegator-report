@@ -4,11 +4,11 @@ Cloudflare Worker (Nitro 2 + h3 + D1) that receives crash reports from the Deleg
 exposes them to humans (`/view`, `/feed.xml`) and agents (`/queue`, `/triage`).
 Prototype-grade: one Worker, one D1, shared tokens, no third-party services.
 
-Read `README.md` for the endpoint contract.
+Read `README.md` for operations. The endpoint contract is the OpenAPI spec at `/_openapi.json` (`/_scalar` to browse), generated from `defineRouteMeta` in each route file.
 
 ## Layout
 
-- `server/routes/<name>.<method>.ts`: one file per endpoint. Nitro derives the route from the filename.
+- `server/routes/<name>.<method>.ts`: one file per endpoint. Nitro derives the route from the filename. Each starts with `defineRouteMeta({ openAPI })`; a contract change edits that block in the same commit.
 - `server/utils/env.ts`: bindings, token check, ETag, stack normalize/clean.
 - `server/components/ui/`: design system. Imports only preact, clsx, tailwind-merge. Never imports from routes, utils, or sibling components.
 - `server/components/`: layout and page components. Routes render them through `html()` in `server/utils/html.ts`.
@@ -41,7 +41,7 @@ Run this loop before opening a PR. A step is done when its command exits 0.
 4. **Dev server green.** Same `curl`, now passing. For `/view`, `/queue`, `/feed.xml`, `/r/*` also check 403 without the key and 403 with a token from another role; for the JSON and feed routes, 304 with the returned ETag. For a page change, confirm the HTML has zero `<script` tags and that a report containing `<img onerror>` renders escaped.
 5. **Worker runtime green.** `pnpm build && pnpm preview`, repeat the key `curl` on `http://localhost:8787`. `nitro dev` runs on Node; this runs on workerd and catches runtime differences.
 6. **`pnpm check` green.** Typecheck, oxlint, oxfmt. Fix with `pnpm lint:fix` and `pnpm fmt`.
-7. **Docs current.** If the endpoint contract, params, scripts, or schema changed, the matching section of `README.md` says so.
+7. **Docs current.** A contract change updates the route's `defineRouteMeta` block. A script or schema change updates `README.md`.
 8. **PR.** Draft PR against `main`. Body: what changed, the `curl` commands from step 4 with their output, and the migration file if `schema.sql` changed.
 
 Working tree stays uncommitted until the user asks for a commit.

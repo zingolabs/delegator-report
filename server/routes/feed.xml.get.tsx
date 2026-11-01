@@ -11,6 +11,40 @@ import {
   parseSample,
 } from "../utils/reports";
 import { ReportBody } from "../components/report-page";
+import { defineRouteMeta } from "nitropack/runtime";
+
+defineRouteMeta({
+  openAPI: {
+    tags: ["read"],
+    summary: "Atom feed of fingerprints",
+    description:
+      "Newest first. Entry id is the fingerprint, so a reader notifies once per new crash type. " +
+      "Entry content is the same as the /r page. Subscribe a feed reader to this URL with the key.",
+    parameters: [
+      {
+        name: "key",
+        in: "query",
+        required: true,
+        schema: { type: "string" },
+        description: "READ_TOKEN",
+      },
+      {
+        name: "since",
+        in: "query",
+        schema: { type: "integer" },
+        description: "unix ms, only rows with lastSeen > since",
+      },
+      { name: "limit", in: "query", schema: { type: "integer", maximum: 500 } },
+      { name: "buildId", in: "query", schema: { type: "string" } },
+      { name: "untriaged", in: "query", schema: { type: "string", enum: ["0", "1"] } },
+    ],
+    responses: {
+      "200": { description: "application/atom+xml" },
+      "304": { description: "not modified" },
+      "403": { description: "missing or wrong key" },
+    },
+  },
+});
 
 /** Bump when entry markup/title/summary changes so readers drop their cached copy. */
 const FEED_FORMAT = 6;

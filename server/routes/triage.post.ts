@@ -1,5 +1,47 @@
 import { defineEventHandler, readBody, setResponseStatus } from "h3";
 import { useEnv, checkKey, clip } from "../utils/env";
+import { defineRouteMeta } from "nitropack/runtime";
+
+defineRouteMeta({
+  openAPI: {
+    tags: ["agent"],
+    summary: "Mark a fingerprint triaged",
+    description: "Appends to the triage log and updates the row. WRITE_TOKEN only.",
+    parameters: [
+      {
+        name: "key",
+        in: "query",
+        required: true,
+        schema: { type: "string" },
+        description: "WRITE_TOKEN",
+      },
+    ],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["fingerprint"],
+            properties: {
+              fingerprint: { type: "string", description: "64-char hex sha-256" },
+              actor: { type: "string", example: "agent-v1" },
+              prUrl: { type: "string" },
+              note: { type: "string" },
+              reset: { type: "boolean", description: "clear triage state, history is kept" },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      "200": { description: "{ ok, fingerprint, triagedAt, actor }" },
+      "400": { description: "bad fingerprint" },
+      "403": { description: "missing or wrong key" },
+      "404": { description: "unknown fingerprint" },
+    },
+  },
+});
 
 interface TriageBody {
   fingerprint: string;

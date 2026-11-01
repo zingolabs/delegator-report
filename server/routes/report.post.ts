@@ -1,5 +1,49 @@
 import { defineEventHandler, readBody, getRequestIP, setResponseStatus } from "h3";
 import { useEnv, sha256, normalizeStack, cleanStack, clip, checkReportToken } from "../utils/env";
+import { defineRouteMeta } from "nitropack/runtime";
+
+defineRouteMeta({
+  openAPI: {
+    tags: ["app"],
+    summary: "Submit a crash report",
+    description:
+      "Fire-and-forget. Always 204, including on a bad token, malformed body, rate limit, or server error. " +
+      "Fingerprint = sha256(buildId + normalized stack). Same error on the same build increments the count.",
+    parameters: [
+      {
+        name: "x-report-token",
+        in: "header",
+        required: true,
+        schema: { type: "string" },
+        description: "REPORT_TOKEN",
+      },
+    ],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["buildId", "stack"],
+            properties: {
+              buildId: { type: "string", description: "short git SHA of the app build" },
+              version: { type: "string" },
+              platform: { type: "string", example: "ios" },
+              stack: { type: "string" },
+              message: { type: "string" },
+              breadcrumbs: {
+                type: "array",
+                items: { type: "string" },
+                description: "last user actions, newest last",
+              },
+            },
+          },
+        },
+      },
+    },
+    responses: { "204": { description: "accepted or silently dropped" } },
+  },
+});
 
 const MAX_REPORTS_PER_HOUR = 60;
 /** Occurrences kept per fingerprint besides the first one. */
