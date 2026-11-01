@@ -1,0 +1,19 @@
+name = "delegator-report"
+main = "./.output/server/index.mjs"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Create with: npx wrangler d1 create delegator-report
+# Then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "delegator-report"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[observability]
+enabled = true
+
+
+# Static files (compiled Tailwind CSS). Nitro copies public/ into .output/public.
+[assets]
+directory = "./.output/public"

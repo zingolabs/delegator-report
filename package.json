@@ -1,0 +1,59 @@
+{
+  "name": "delegator-report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm css && nitro dev",
+    "css": "tailwindcss -i ./src/app.css -o ./public/app.css --minify",
+    "css:watch": "tailwindcss -i ./src/app.css -o ./public/app.css --watch",
+    "build": "pnpm css && nitro build",
+    "preview": "wrangler dev",
+    "deploy": "nitro build && wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
+    "db:init": "wrangler d1 execute delegator-report --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute delegator-report --local --file=./schema.sql",
+    "db:seed:local": "wrangler d1 execute delegator-report --local --file=./seed.sql",
+    "db:reset:local": "rm -rf .wrangler/state && pnpm db:init:local && pnpm db:seed:local",
+    "erd": "mermerd -c \"sqlite3://$PWD/$(ls .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite | grep -v metadata | head -1)\" --useAllTables --omitConstraintLabels --ignoreTables ratelimit,sqlite_sequence,_cf_KV,_cf_METADATA --outputMode stdout",
+    "schema:snapshot": "node scripts/schema.ts snapshot",
+    "schema:list": "node scripts/schema.ts list",
+    "schema:diff": "node scripts/schema.ts diff",
+    "schema:show": "node scripts/schema.ts show"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "h3": "^1.15.0",
+    "nitropack": "^2.13.0",
+    "preact": "^11.1.1",
+    "preact-render-to-string": "^6.8.2",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.0.0",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^26.6.6",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild",
+      "workerd"
+    ]
+  }
+}

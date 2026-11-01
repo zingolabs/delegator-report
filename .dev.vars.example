@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local `pnpm dev`. Never commit .dev.vars.
+REPORT_TOKEN=dev-report-token
+READ_TOKEN=dev-token-change-me
+WRITE_TOKEN=dev-write-token

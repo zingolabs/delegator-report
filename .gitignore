@@ -1,0 +1,8 @@
+node_modules
+.output
+.nitro
+.wrangler
+.dev.vars
+*.log
+.pnpm-store
+public/app.css

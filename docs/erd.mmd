@@ -1,0 +1,36 @@
+
+erDiagram
+    occurrences {
+        TEXT fingerprint FK 
+        INTEGER id PK 
+        TEXT platform 
+        TEXT sample 
+        INTEGER seen_at 
+        TEXT version 
+    }
+
+    reports {
+        TEXT build_id 
+        INTEGER count 
+        TEXT fingerprint PK 
+        INTEGER first_seen 
+        INTEGER last_seen 
+        TEXT message 
+        TEXT note 
+        TEXT pr_url 
+        TEXT stack_clean 
+        INTEGER triaged_at 
+    }
+
+    triage_events {
+        TEXT action 
+        TEXT actor 
+        INTEGER at 
+        TEXT fingerprint FK 
+        INTEGER id PK 
+        TEXT note 
+        TEXT pr_url 
+    }
+
+    occurrences }o--|| reports : ""
+    triage_events }o--|| reports : ""
