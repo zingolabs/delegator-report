@@ -1,7 +1,20 @@
 # delegator-report
 
-Crash/error reporting Worker for the ZingoLabs Delegator app (Zcash Crosslink featurenet).
-Prototype-grade. Nitro (TypeScript) + Cloudflare Workers + D1. No third-party services.
+Crash reporting for the ZingoLabs Delegator app (Zcash Crosslink featurenet).
+Cloudflare Worker (Nitro 2 + h3) with one D1 database. No third-party services.
+
+**Production:** `https://delegator-report.dariovp01.workers.dev` · branch `dev` · free tier.
+Humans subscribe to the Atom feed; agents poll `/queue`; the app posts to `/report`.
+
+| what you want            | do this                                                         |
+| ------------------------ | --------------------------------------------------------------- |
+| see crashes              | subscribe a feed reader to `/feed.xml?key=<READ_TOKEN>`         |
+| open one crash           | click the entry, or `/r/<fingerprint>?key=<READ_TOKEN>`         |
+| ship a code change       | `pnpm check && pnpm release`                                    |
+| change the schema        | see [Migrations](#migrations)                                   |
+| rotate a token           | see [Secrets](#secrets)                                         |
+| read production logs     | `pnpm wrangler tail`                                            |
+| query production D1      | `pnpm wrangler d1 execute delegator-report --remote --command "…"` |
 
 ## Layout
 
@@ -25,32 +38,75 @@ server/utils/reports.ts        # shared filter + query
 .dev.vars.example          # local secrets template (copy to .dev.vars)
 ```
 
-## Deployment
+## Operations
 
-Live at `https://delegator-report.dariovp01.workers.dev` (workers.dev, free tier). D1 database
-`delegator-report`, id in `wrangler.toml`. Secrets were pushed from `.prod.vars`, which is not
-in git; keep a copy in a password manager.
+The Worker is live. Everything in this section touches production.
 
-## Setup
+### Deploy
+
+```sh
+pnpm check            # typecheck, lint, format
+pnpm release          # build + wrangler deploy; prints the version id
+pnpm wrangler tail    # live logs, Ctrl-C to stop
+```
+
+`wrangler deploy` is atomic: the previous version stays until the upload succeeds. To roll
+back, `pnpm wrangler rollback` and pick the previous version.
+
+### Secrets
+
+Three tokens, generated once into `.prod.vars` (gitignored, mode 600) and pushed with
+`pnpm secrets:push`. Keep a copy in a password manager; wrangler never shows them again.
+
+| token          | holder                  | rotate when                                  |
+| -------------- | ----------------------- | -------------------------------------------- |
+| `REPORT_TOKEN` | the app build           | every release that changes it; it is extractable |
+| `READ_TOKEN`   | feed readers, agents    | a reader account or agent config leaks       |
+| `WRITE_TOKEN`  | admins, the agent runner| a runner leaks                               |
+
+Rotate one: edit its line in `.prod.vars`, `pnpm secrets:push`, then update the holders.
+Rotating `READ_TOKEN` invalidates every feed subscription URL.
+
+### Migrations
+
+`schema.sql` is the full schema for a fresh database. The deployed baseline is
+`docs/schema/0001-20261031.sql`. A schema change goes like this:
+
+```sh
+# 1. edit schema.sql, then rebuild the local DB and snapshot it
+pnpm db:reset:local
+pnpm schema:snapshot <label>
+pnpm schema:diff 1 2                      # baseline vs new: the ALTER statements you need
+
+# 2. write migrations/NNNN-<label>.sql with those statements, apply it remotely
+pnpm wrangler d1 execute delegator-report --remote --file=./migrations/NNNN-<label>.sql
+
+# 3. deploy the code that expects the new schema, update docs/erd.mmd and the README diagram
+pnpm release && pnpm erd
+```
+
+Add columns with defaults or as nullable so the old Worker version keeps working between
+steps 2 and 3.
+
+### Data
+
+- Production holds real crash data from users. Do not seed it, reset it, or truncate
+  `reports`/`occurrences` without a reason. `seed.sql` is for local only.
+- `ratelimit` rows are per-hour counters and safe to delete at any time.
+
+## New account setup
+
+Only needed to stand this up under a different Cloudflare account.
 
 ```sh
 pnpm install
-
-# 1. Create the D1 database and paste the returned database_id into wrangler.toml
-pnpm wrangler d1 create delegator-report
-
-# 2. Apply the schema (remote). Idempotent; re-run after schema changes.
-pnpm db:init
-
-# 3. Generate the three tokens into a gitignored file, then push them as Worker secrets
+pnpm wrangler login
+pnpm wrangler d1 create delegator-report      # paste database_id into wrangler.toml
+pnpm db:init                                  # schema.sql -> remote D1
 printf 'REPORT_TOKEN=%s\nREAD_TOKEN=%s\nWRITE_TOKEN=%s\n' \
   "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .prod.vars
-pnpm secrets:push          # wrangler secret bulk .prod.vars
-# REPORT_TOKEN ships in the app (create-only); READ_TOKEN for feed/page/JSON; WRITE_TOKEN for triage.
-# Keep .prod.vars in a password manager too; wrangler never shows secrets again.
-
-# 4. Deploy
-pnpm deploy
+pnpm secrets:push
+pnpm release
 ```
 
 ## Local development
@@ -74,7 +130,7 @@ To start over: `pnpm db:reset:local`.
 `pnpm preview` builds nothing; it runs `wrangler dev` against the last `pnpm build` output
 (the closest thing to the real Worker runtime). Run `pnpm build` first.
 
-Other scripts: `build`, `typecheck`, `lint`, `lint:fix`, `fmt`, `fmt:check`, `check` (all three),
+Other scripts: `build`, `release`, `typecheck`, `lint`, `lint:fix`, `fmt`, `fmt:check`, `check` (all three),
 `db:reset:local` (wipe local D1, re-apply schema and seed), `erd` (Mermaid ER diagram),
 `schema:snapshot` / `schema:list` / `schema:diff` / `schema:show` (schema history, below).
 
@@ -207,7 +263,7 @@ Behaviour:
 Example:
 
 ```sh
-curl -X POST https://delegator-report.<account>.workers.dev/report \
+curl -X POST https://delegator-report.dariovp01.workers.dev/report \
   -H 'x-report-token: <REPORT_TOKEN>' -H 'content-type: application/json' \
   -d '{"buildId":"a1b2c3d4","version":"0.4.2","platform":"ios","stack":"Error: boom\n  at foo (app.js:1:2)","message":"boom","breadcrumbs":[]}'
 ```
@@ -299,4 +355,4 @@ and it works. Components that need Radix or client state are out of scope.
 - `wrangler.toml` is the source of truth for bindings. `nitro dev` reads it through wrangler's
   platform proxy, so local D1 and `.dev.vars` secrets work without extra config.
 - Everything is one D1 database. Occurrences are capped per fingerprint at insert time; there is
-  no other retention or cleanup job. Truncate `ratelimit` by hand when needed.
+  no other retention or cleanup job.

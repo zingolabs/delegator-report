@@ -9,7 +9,7 @@
     "css:watch": "tailwindcss -i ./src/app.css -o ./public/app.css --watch",
     "build": "pnpm css && nitro build",
     "preview": "wrangler dev",
-    "deploy": "nitro build && wrangler deploy",
+    "release": "nitro build && wrangler deploy",
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",

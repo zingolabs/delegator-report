@@ -28,7 +28,7 @@ Read `README.md` for the endpoint contract.
 - ETags come from `versionTag(db, format)`. When a route's output shape or markup changes, bump that route's format constant, or feed readers keep their cached copy.
 - HTML routes return `html(event, <Component/>)`. Text goes through JSX children so it is escaped; `dangerouslySetInnerHTML` is never used.
 - Compat date in `nitro.config.ts` must stay at or after 2025-08-01. Nitro parses it in local time; at exactly 2025-07-15 dev mode silently loses the Cloudflare bindings proxy.
-- Never run `wrangler deploy`, `wrangler d1 create`, `secret put`/`secret bulk`, or any `--remote` script unless the user asks for that deploy. The Worker is live; a deploy is a production change.
+- Never run `pnpm release`, `wrangler deploy`, `wrangler d1 create`, `secret put`/`secret bulk`, or any `--remote` command unless the user asks for that deploy. The Worker is live; a deploy is a production change, and production D1 holds real user data.
 - Never commit unless the user asks. Leave work as working-tree changes.
 
 ## Development cycle
