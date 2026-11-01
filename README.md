@@ -14,11 +14,11 @@ from the route metadata. The raw spec is at `/_openapi.json`.
 
 ## Tokens
 
-| token          | who holds it         | grants                                   |
-| -------------- | -------------------- | ---------------------------------------- |
+| token          | who holds it         | grants                                    |
+| -------------- | -------------------- | ----------------------------------------- |
 | `REPORT_TOKEN` | the app, as a header | `POST /report`, create or bump count only |
-| `READ_TOKEN`   | feed readers, agents | feed, page, `/view`, `/queue`            |
-| `WRITE_TOKEN`  | admins, agent runner | `POST /triage`                           |
+| `READ_TOKEN`   | feed readers, agents | feed, page, `/view`, `/queue`             |
+| `WRITE_TOKEN`  | admins, agent runner | `POST /triage`                            |
 
 The report token ships inside a public app, so it is a noise filter and a rotation handle, not
 a secret. Reporter data (stacks, messages, breadcrumbs) is stored and shown but never trusted.
@@ -48,13 +48,14 @@ The `crash-triage` CLI in the delegator repo wraps both.
 
 ## Operations
 
-Everything here touches production.
+Merging to `main` deploys through GitHub Actions (`.github/workflows/ci.yml`). Every PR runs
+`pnpm check` and `pnpm build` first. The workflow needs two repository secrets:
+`CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit, D1: Edit) and `CLOUDFLARE_ACCOUNT_ID`.
 
 ```sh
-pnpm check                  # typecheck, lint, format
-pnpm release                # build and deploy
 pnpm wrangler tail          # live logs
 pnpm wrangler rollback      # previous version
+pnpm release                # manual deploy, only if CI is down
 ```
 
 **Secrets** live in `.prod.vars` (gitignored) and go up with `pnpm secrets:push`. Keep a copy in
@@ -70,7 +71,7 @@ pnpm schema:snapshot <label>           # docs/schema/NNNN-...sql
 pnpm schema:diff 1 2                   # the ALTER statements you need
 # write migrations/NNNN-<label>.sql, then:
 pnpm wrangler d1 execute delegator-report --remote --file=./migrations/NNNN-<label>.sql
-pnpm release && pnpm erd               # deploy, regenerate docs/erd.mmd and the diagram below
+pnpm erd                               # regenerate docs/erd.mmd and the diagram below, then merge the PR
 ```
 
 Add columns nullable or with defaults so the old Worker keeps working between the migration
