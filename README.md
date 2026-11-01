@@ -14,11 +14,11 @@ from the route metadata. The raw spec is at `/_openapi.json`.
 
 ## Tokens
 
-| token          | who holds it         | grants                                   |
-| -------------- | -------------------- | ---------------------------------------- |
+| token          | who holds it         | grants                                    |
+| -------------- | -------------------- | ----------------------------------------- |
 | `REPORT_TOKEN` | the app, as a header | `POST /report`, create or bump count only |
-| `READ_TOKEN`   | feed readers, agents | feed, page, `/view`, `/queue`            |
-| `WRITE_TOKEN`  | admins, agent runner | `POST /triage`                           |
+| `READ_TOKEN`   | feed readers, agents | feed, page, `/view`, `/queue`             |
+| `WRITE_TOKEN`  | admins, agent runner | `POST /triage`                            |
 
 The report token ships inside a public app, so it is a noise filter and a rotation handle, not
 a secret. Reporter data (stacks, messages, breadcrumbs) is stored and shown but never trusted.
