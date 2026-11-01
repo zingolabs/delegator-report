@@ -3,8 +3,8 @@
 Crash reporting for the ZingoLabs Delegator app (Zcash Crosslink featurenet).
 Cloudflare Worker (Nitro 2 + h3) with one D1 database. No third-party services.
 
-**Production:** `https://delegator-report.dariovp01.workers.dev` · branch `dev` · free tier.
-Humans subscribe to the Atom feed; agents poll `/queue`; the app posts to `/report`.
+**Production:** `https://delegator-report.dariovp01.workers.dev`, deployed from branch `dev` on the free tier.
+Humans subscribe to the Atom feed. Agents poll `/queue`. The app posts to `/report`.
 
 | what you want            | do this                                                         |
 | ------------------------ | --------------------------------------------------------------- |
@@ -29,7 +29,7 @@ server/routes/queue.get.ts     # GET  /queue?key=...     minimal safe rows for a
 server/routes/triage.post.ts   # POST /triage?key=...    mark a fingerprint triaged
 server/routes/feed.xml.get.ts  # GET  /feed.xml?key=...  Atom feed
 server/routes/r/[fingerprint].get.tsx  # GET /r/<fp>?key=...  HTML page, feed entry link target
-server/components/ui/          # shadcn-style preact components (static only); design system
+server/components/ui/          # design system: shadcn-style preact components, static only
 server/components/             # layout + page components
 server/utils/html.ts           # renderToStaticMarkup helper
 src/app.css                    # Tailwind v4 entry + design tokens -> public/app.css (built)
@@ -56,11 +56,11 @@ back, `pnpm wrangler rollback` and pick the previous version.
 ### Secrets
 
 Three tokens, generated once into `.prod.vars` (gitignored, mode 600) and pushed with
-`pnpm secrets:push`. Keep a copy in a password manager; wrangler never shows them again.
+`pnpm secrets:push`. Keep a copy in a password manager. Wrangler never shows them again.
 
 | token          | holder                  | rotate when                                  |
 | -------------- | ----------------------- | -------------------------------------------- |
-| `REPORT_TOKEN` | the app build           | every release that changes it; it is extractable |
+| `REPORT_TOKEN` | the app build           | every release that changes it, since it is extractable |
 | `READ_TOKEN`   | feed readers, agents    | a reader account or agent config leaks       |
 | `WRITE_TOKEN`  | admins, the agent runner| a runner leaks                               |
 
@@ -127,7 +127,7 @@ curl -X POST localhost:3000/report -H 'x-report-token: dev-report-token' -H 'con
 
 To start over: `pnpm db:reset:local`.
 
-`pnpm preview` builds nothing; it runs `wrangler dev` against the last `pnpm build` output
+`pnpm preview` builds nothing. It runs `wrangler dev` against the last `pnpm build` output
 (the closest thing to the real Worker runtime). Run `pnpm build` first.
 
 Other scripts: `build`, `release`, `typecheck`, `lint`, `lint:fix`, `fmt`, `fmt:check`, `check` (all three),
@@ -138,7 +138,7 @@ Tooling: pnpm (pinned via `packageManager`), oxlint (`.oxlintrc.json`), oxfmt (`
 Run `pnpm check` before opening a PR.
 
 Schema changes: the deployed baseline is `docs/schema/0001-20261031.sql`. From here, a change to `schema.sql` needs a matching migration file
-applied to the remote D1 with `wrangler d1 execute --remote`; local dev still uses
+applied to the remote D1 with `wrangler d1 execute --remote`. Local dev still uses
 `pnpm db:reset:local`.
 
 ### Schema history
@@ -161,7 +161,7 @@ the deployed snapshot and the next one is the starting point for a migration fil
 
 Generated from the local D1 with `pnpm erd` (needs [mermerd](https://github.com/KarnerTh/mermerd):
 `go install github.com/KarnerTh/mermerd@latest`). Re-run after changing `schema.sql` and paste
-the output here and into `docs/erd.mmd`. `ratelimit` is omitted; it is a counter, not data.
+the output here and into `docs/erd.mmd`. `ratelimit` is omitted because it is a counter, not data.
 
 ```mermaid
 
@@ -215,7 +215,7 @@ not a secret. The real guarantees on the create path are structural: a report ca
 row or increment its count, the first payload (`firstSample`) is never overwritten, and the
 rate limit applies. Reporters cannot read anything and cannot touch triage.
 
-The read token ends up stored in feed readers and hosted services. Rotate it if it leaks; it
+The read token ends up stored in feed readers and hosted services. Rotate it if it leaks. It
 cannot modify data. The write token should stay with admins and the agent runner.
 
 ## Endpoints
@@ -242,8 +242,8 @@ Body (JSON):
 
 | field       | required | notes                                              |
 | ----------- | -------- | -------------------------------------------------- |
-| buildId     | yes      | clipped to 128 chars; part of the fingerprint      |
-| stack       | yes      | clipped to 16k chars; normalized then hashed       |
+| buildId     | yes      | clipped to 128 chars, part of the fingerprint      |
+| stack       | yes      | clipped to 16k chars, normalized then hashed       |
 | version     | no       | default `"unknown"`                                |
 | platform    | no       | default `"unknown"`                                |
 | message     | no       | clipped to 2k chars                                |
@@ -256,7 +256,7 @@ Behaviour:
 - `reports` holds one row per fingerprint: `count`, `first_seen`, `last_seen`, `build_id`,
   `message` and `stack_clean` from the first report, and triage state.
 - `occurrences` holds one row per received report: `seen_at`, `version`, `platform`, and the
-  full JSON `sample`. The first occurrence is kept forever; after that only the newest 20.
+  full JSON `sample`. The first occurrence is kept forever, after that only the newest 20.
 - Rate limit: 60 reports per client IP per hour. Excess reports are dropped silently. This
   moves to a per-device key once reports are signed.
 
@@ -271,18 +271,18 @@ curl -X POST https://delegator-report.dariovp01.workers.dev/report \
 ### `GET /view?key=<READ_TOKEN>`
 
 JSON array of fingerprint rows sorted by `count DESC, lastSeen DESC`. Any missing or wrong key
-returns `403`. There is no other auth; keep the token long and private.
+returns `403`. There is no other auth, so keep the token long and private.
 
 Query params (all optional, shared by `/view`, `/queue`, `/feed.xml`):
 
 | param       | meaning                                                       |
 | ----------- | ------------------------------------------------------------- |
-| `since`     | unix ms; only rows with `lastSeen > since`                    |
+| `since`     | unix ms, only rows with `lastSeen > since`                    |
 | `limit`     | max rows, default 500 (`/queue` 100, `/feed.xml` 50), cap 500 |
 | `buildId`   | exact match                                                   |
 | `untriaged` | `1` to return only rows with no `triagedAt`                   |
 
-Sends a weak `ETag`; send it back as `If-None-Match` to get `304`.
+Sends a weak `ETag`. Send it back as `If-None-Match` to get `304`.
 
 ```json
 [
@@ -306,7 +306,7 @@ Sends a weak `ETag`; send it back as `If-None-Match` to get `304`.
 ```
 
 `platforms` and `versions` count retained occurrences (first + newest 20), not all `count`
-reports. `message`, `firstSample`, and `latestSample` are **untrusted client input**;
+reports. `message`, `firstSample`, and `latestSample` are **untrusted client input**.
 `firstSample` never changes, `latestSample` moves with each new report. Do not feed them to an agent as instructions. `stackClean` keeps only frame-like lines.
 
 ### `GET /queue?key=<READ_TOKEN>`
@@ -331,19 +331,19 @@ Atom feed, newest `firstSeen` first, default 50 entries. Entry id is the fingerp
 notifies once per new crash type. Entry content is the same component as the page, so both
 carry identical information. Sends `application/atom+xml`, `cache-control: max-age=300`, and an ETag. Wrong key returns `403`
 (never `404`, which some readers treat as a dead feed). Hosted readers store the URL on their
-servers; rotate `READ_TOKEN` if it leaks.
+servers, so rotate `READ_TOKEN` if it leaks.
 
 ### `GET /r/<fingerprint>?key=<READ_TOKEN>`
 
 HTML page for one fingerprint: counts, platform and version breakdown, build, timestamps,
 triage state and log, cleaned stack, raw stacks (first report, and latest if it differs),
-breadcrumbs (marked untrusted, always escaped), and the retained occurrences. This is the `<link>` target of each feed entry;
-the feed embeds the key in the link. `400` bad fingerprint, `404` unknown, `403` wrong key.
+breadcrumbs (marked untrusted, always escaped), and the retained occurrences. This is the `<link>` target of each feed entry.
+The feed embeds the key in the link. `400` bad fingerprint, `404` unknown, `403` wrong key.
 
 ## UI and design system
 
 Pages are preact components rendered to static HTML with `preact-render-to-string`. No client
-JavaScript ships. Styling is Tailwind v4; `src/app.css` holds the shadcn-style tokens and is
+JavaScript ships. Styling is Tailwind v4. `src/app.css` holds the shadcn-style tokens and is
 compiled to `public/app.css` by `pnpm css` (run automatically by `dev` and `build`).
 
 `server/components/ui/` is the reusable part: shadcn-style components that import only preact,
@@ -354,5 +354,5 @@ and it works. Components that need Radix or client state are out of scope.
 
 - `wrangler.toml` is the source of truth for bindings. `nitro dev` reads it through wrangler's
   platform proxy, so local D1 and `.dev.vars` secrets work without extra config.
-- Everything is one D1 database. Occurrences are capped per fingerprint at insert time; there is
+- Everything is one D1 database. Occurrences are capped per fingerprint at insert time. There is
   no other retention or cleanup job.
