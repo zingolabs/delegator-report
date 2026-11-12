@@ -5,7 +5,7 @@ import { cn } from "./ui";
 interface Props {
   /** Cells for the window. Days without a cell are empty. */
   data: DayCount[];
-  /** All known versions, newest first. Gives each version its colour. */
+  /** All known releases, newest first. Gives each release its hue. */
   versions: string[];
   /** UTC day number of the last column. */
   today: number;
@@ -13,10 +13,20 @@ interface Props {
   class?: string;
 }
 
-/** The newest versions get a colour each. The rest fold into one neutral series. */
+/**
+ * A series is a release on an OS. Hue is the release: the newest three get one each. The OS is
+ * the fill: iOS solid, Android hatched. Everything else folds into one neutral series.
+ */
 const COLOURED = 3;
-const SERIES = ["bg-series-1", "bg-series-2", "bg-series-3"];
-const OLDER = "bg-foreground/25";
+const HUES = ["bg-series-1", "bg-series-2", "bg-series-3"];
+const OTHER = "bg-foreground/25";
+/** Bottom to top inside one release. */
+const OSES = [
+  { os: "android", name: "Android", fill: "series-hatch" },
+  { os: "ios", name: "iOS", fill: "" },
+];
+
+const sum = (cells: DayCount[]): number => cells.reduce((a, d) => a + d.n, 0);
 
 const dayLabel = (day: number): string =>
   new Date(day * DAY_MS).toLocaleDateString("en-US", {
@@ -26,38 +36,50 @@ const dayLabel = (day: number): string =>
   });
 
 /**
- * Reports per UTC day, stacked by app version. Static HTML: the bars are flex boxes, the
- * tooltip is the native `title`. A version keeps its colour when a newer one arrives, because
- * the colour comes from its position in the release order, not from its rank in this chart.
+ * Reports per UTC day, stacked by release and OS. Static HTML: the bars are flex boxes, the
+ * tooltip is the native `title`. A release keeps its hue when a newer one arrives, because the
+ * hue comes from its position in the release order, not from its rank in this chart.
  */
 export function DayChart({ data, versions, today, days, class: c }: Props) {
-  // Oldest version = 0. Three consecutive positions are always three different colours.
+  // Oldest release = 0. Three consecutive positions are always three different hues.
   const position = new Map(versions.map((v, i) => [v, versions.length - 1 - i]));
-  const coloured = versions.slice(0, COLOURED);
-  const colourOf = (v: string): string =>
-    coloured.includes(v) ? SERIES[(position.get(v) ?? 0) % COLOURED]! : OLDER;
+  // Bottom to top: older releases first, and Android under iOS.
+  const series = versions
+    .slice(0, COLOURED)
+    .toReversed()
+    .flatMap((v) =>
+      OSES.map((o) => ({
+        version: v,
+        os: o.os,
+        label: `${v} ${o.name}`,
+        colour: cn(HUES[(position.get(v) ?? 0) % COLOURED], o.fill),
+      })),
+    );
+  const has = (d: DayCount): boolean =>
+    series.some((s) => s.version === d.version && s.os === d.os);
 
   const first = today - days + 1;
   const columns = Array.from({ length: days }, (_, i) => {
     const cells = data.filter((d) => d.day === first + i);
-    const older = cells.filter((d) => !coloured.includes(d.version)).reduce((a, d) => a + d.n, 0);
-    // Bottom to top: older, then the coloured versions from oldest to newest.
     const parts = [
-      { label: "older", n: older, colour: OLDER },
-      ...coloured.toReversed().map((v) => ({
-        label: v,
-        n: cells.filter((d) => d.version === v).reduce((a, d) => a + d.n, 0),
-        colour: colourOf(v),
+      { label: "other", n: sum(cells.filter((d) => !has(d))), colour: OTHER },
+      ...series.map((s) => ({
+        label: s.label,
+        n: sum(cells.filter((d) => d.version === s.version && d.os === s.os)),
+        colour: s.colour,
       })),
     ].filter((p) => p.n > 0);
-    return { day: first + i, parts, total: parts.reduce((a, p) => a + p.n, 0) };
+    return { day: first + i, parts, total: sum(cells) };
   });
   const max = Math.max(1, ...columns.map((col) => col.total));
   const total = columns.reduce((a, col) => a + col.total, 0);
-  const hasOlder = data.some((d) => !coloured.includes(d.version));
+  // Newest first, and only what the window holds.
   const legend = [
-    ...coloured.filter((v) => data.some((d) => d.version === v)).map((v) => [v, colourOf(v)]),
-    ...(hasOlder ? [["older", OLDER]] : []),
+    ...series
+      .toReversed()
+      .filter((s) => data.some((d) => d.version === s.version && d.os === s.os))
+      .map((s) => [s.label, s.colour]),
+    ...(data.some((d) => !has(d)) ? [["other", OTHER]] : []),
   ] as [string, string][];
 
   return (
@@ -70,8 +92,8 @@ export function DayChart({ data, versions, today, days, class: c }: Props) {
           <span class="flex flex-wrap gap-x-3 gap-y-1">
             {legend.map(([label, colour]) => (
               <span class="inline-flex items-center gap-1.5">
-                <span class={cn("size-2 rounded-[2px]", colour)} />
-                <span class={label === "older" ? undefined : "font-mono"}>{label}</span>
+                <span class={cn("size-2.5 rounded-[2px]", colour)} />
+                <span>{label}</span>
               </span>
             ))}
           </span>
