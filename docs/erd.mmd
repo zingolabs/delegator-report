@@ -1,5 +1,13 @@
 
 erDiagram
+    daily_counts {
+        INTEGER count 
+        INTEGER day PK 
+        TEXT fingerprint PK,FK 
+        TEXT platform PK 
+        TEXT version PK 
+    }
+
     occurrences {
         TEXT fingerprint FK 
         INTEGER id PK 
@@ -32,5 +40,6 @@ erDiagram
         TEXT pr_url 
     }
 
+    daily_counts }o--|| reports : ""
     occurrences }o--|| reports : ""
     triage_events }o--|| reports : ""

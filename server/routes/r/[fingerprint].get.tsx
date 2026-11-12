@@ -1,6 +1,6 @@
 import { defineEventHandler, getRouterParam, setResponseStatus, getRequestURL, getQuery } from "h3";
 import { useEnv, checkKey } from "../../utils/env";
-import { occurrencesFor, eventsFor, type ReportRow } from "../../utils/reports";
+import { occurrencesFor, eventsFor, dailyFor, dayOf, type ReportRow } from "../../utils/reports";
 import { html } from "../../utils/html";
 import { ReportPage } from "../../components/report-page";
 import { defineRouteMeta } from "nitropack/runtime";
@@ -9,7 +9,9 @@ defineRouteMeta({
   openAPI: {
     tags: ["read"],
     summary: "HTML page for one fingerprint",
-    description: "The link target of a feed entry. Static HTML, no scripts.",
+    description:
+      "The link target of a feed entry and of a list row. Shows reports per day by version, and each " +
+      "retained occurrence with its own message, breadcrumbs and stack. Static HTML, no scripts.",
     parameters: [
       {
         name: "fingerprint",
@@ -52,9 +54,11 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 404);
     return "unknown fingerprint";
   }
-  const [occ, ev] = await Promise.all([
+  const today = dayOf(Date.now());
+  const [occ, ev, daily] = await Promise.all([
     occurrencesFor(env.DB, [fingerprint]),
     eventsFor(env.DB, [fingerprint]),
+    dailyFor(env.DB, fingerprint, today),
   ]);
   const url = getRequestURL(event);
   const key = encodeURIComponent(String(getQuery(event).key ?? ""));
@@ -65,6 +69,7 @@ export default defineEventHandler(async (event) => {
       row={row}
       occurrences={occ.get(fingerprint)}
       events={ev.get(fingerprint)}
+      daily={{ ...daily, today }}
       feedHref={feedHref}
       homeHref={`/?key=${key}`}
     />,

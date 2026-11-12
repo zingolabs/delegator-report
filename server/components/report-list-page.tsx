@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
-import type { Facets, ListSort, ReportRow, SortKey } from "../utils/reports";
-import { PAGE_LIMIT, MAX_LIMIT } from "../utils/reports";
+import type { ListPage, ListSort, SortKey } from "../utils/reports";
+import { PAGE_LIMIT, MAX_LIMIT, CHART_DAYS, dayOf } from "../utils/reports";
+import { DayChart, Trend } from "./day-chart";
 import { Layout } from "./layout";
 import { reportTitle } from "./report-page";
 import {
@@ -24,6 +25,7 @@ export interface ListState {
   q: string;
   status: Status;
   buildId: string;
+  version: string;
   platform: string;
   sort: ListSort;
   limit: number;
@@ -31,12 +33,13 @@ export interface ListState {
 
 interface Props {
   state: ListState;
-  rows: ReportRow[];
-  matched: number;
-  facets: Facets;
+  page: ListPage;
   now: number;
   feedHref: string;
 }
+
+/** Version chips shown. Older versions stay reachable through the URL and the search. */
+const MAX_VERSION_CHIPS = 6;
 
 /** Rows that get their own view-transition name. More than this and a re-sort just cross-fades. */
 const MAX_MOVING_ROWS = 60;
@@ -47,8 +50,9 @@ function params(s: ListState): [string, string][] {
   if (s.q) p.push(["q", s.q]);
   if (s.status !== "all") p.push([s.status, "1"]);
   if (s.buildId) p.push(["buildId", s.buildId]);
+  if (s.version) p.push(["version", s.version]);
   if (s.platform) p.push(["platform", s.platform]);
-  if (s.sort.key !== "count") p.push(["sort", s.sort.key]);
+  if (s.sort.key !== "last_seen") p.push(["sort", s.sort.key]);
   if (s.sort.dir !== "desc") p.push(["dir", s.sort.dir]);
   if (s.limit !== PAGE_LIMIT) p.push(["limit", String(s.limit)]);
   return p;
@@ -188,18 +192,33 @@ function SortHead({
   );
 }
 
-/** The root page: every fingerprint as a searchable, filterable, sortable table. No scripts. */
-export function ReportListPage({ state, rows, matched, facets, now, feedHref }: Props) {
-  const filtered = !!(state.q || state.status !== "all" || state.buildId || state.platform);
-  const cleared: ListState = { ...state, q: "", status: "all", buildId: "", platform: "" };
-  const builds =
-    facets.builds.includes(state.buildId) || !state.buildId
-      ? facets.builds
-      : [state.buildId, ...facets.builds];
+/** The root page: every fingerprint, newest first, with search, filters, sorting and trends. No scripts. */
+export function ReportListPage({ state, page, now, feedHref }: Props) {
+  const { rows, matched } = page;
+  const today = dayOf(now);
+  const latest = page.versions[0];
+  const filtered = !!(
+    state.q ||
+    state.status !== "all" ||
+    state.buildId ||
+    state.version ||
+    state.platform
+  );
+  const cleared: ListState = {
+    ...state,
+    q: "",
+    status: "all",
+    buildId: "",
+    version: "",
+    platform: "",
+  };
+  const chips = page.versions.slice(0, MAX_VERSION_CHIPS);
+  const versions =
+    chips.includes(state.version) || !state.version ? chips : [state.version, ...chips];
   const platforms =
-    facets.platforms.includes(state.platform) || !state.platform
-      ? facets.platforms
-      : [state.platform, ...facets.platforms];
+    page.platforms.includes(state.platform) || !state.platform
+      ? page.platforms
+      : [state.platform, ...page.platforms];
   // The search form resubmits the rest of the state through hidden fields.
   const hidden = params({ ...state, q: "" });
 
@@ -238,16 +257,16 @@ export function ReportListPage({ state, rows, matched, facets, now, feedHref }: 
               active: state.status === s,
             }))}
           />
-          {builds.length > 0 ? (
+          {versions.length > 0 ? (
             <FilterGroup
-              name="build"
-              label="Build"
+              name="version"
+              label="Version"
               choices={[
-                { label: "All", href: hrefOf({ ...state, buildId: "" }), active: !state.buildId },
-                ...builds.map((b) => ({
-                  label: b,
-                  href: hrefOf({ ...state, buildId: b }),
-                  active: state.buildId === b,
+                { label: "All", href: hrefOf({ ...state, version: "" }), active: !state.version },
+                ...versions.map((v) => ({
+                  label: v,
+                  href: hrefOf({ ...state, version: v }),
+                  active: state.version === v,
                   mono: true,
                 })),
               ]}
@@ -269,6 +288,12 @@ export function ReportListPage({ state, rows, matched, facets, now, feedHref }: 
           ) : null}
         </div>
       </Card>
+
+      {page.chart.length > 0 ? (
+        <Card class="p-4">
+          <DayChart data={page.chart} versions={page.versions} today={today} days={CHART_DAYS} />
+        </Card>
+      ) : null}
 
       <div class="flex min-h-7 items-center justify-between gap-4 text-sm text-muted-foreground">
         <p class="tabular-nums">
@@ -302,13 +327,15 @@ export function ReportListPage({ state, rows, matched, facets, now, feedHref }: 
           <Table>
             <thead class="border-b bg-muted/40">
               <tr>
-                <SortHead state={state} col="count" class="pl-4">
-                  Count
+                <SortHead state={state} col="last_seen" class="pl-4">
+                  Last seen
                 </SortHead>
                 <TableHead>Report</TableHead>
-                <TableHead class="hidden md:table-cell">Build</TableHead>
-                <SortHead state={state} col="last_seen" class="pr-4 sm:pr-2">
-                  Last seen
+                <TableHead class="hidden md:table-cell">Version</TableHead>
+                <TableHead class="hidden md:table-cell">Platform</TableHead>
+                <TableHead class="hidden lg:table-cell">14 days</TableHead>
+                <SortHead state={state} col="count" class="pr-4 sm:pr-2">
+                  Count
                 </SortHead>
                 <TableHead class="hidden pr-4 sm:table-cell">Status</TableHead>
               </tr>
@@ -320,6 +347,9 @@ export function ReportListPage({ state, rows, matched, facets, now, feedHref }: 
                 ) : (
                   <Badge variant="outline">untriaged</Badge>
                 );
+                const vs = page.versionsOf.get(r.fingerprint) ?? [];
+                const ps = page.platformsOf.get(r.fingerprint) ?? [];
+                const trend = page.trends.get(r.fingerprint);
                 return (
                   <TableRow
                     class="vt-row transition-colors duration-150 hover:bg-muted/50"
@@ -329,21 +359,40 @@ export function ReportListPage({ state, rows, matched, facets, now, feedHref }: 
                         : undefined
                     }
                   >
-                    <TableCell class="pl-4 font-semibold tabular-nums">{num(r.count)}</TableCell>
+                    <TableCell class="pl-4 whitespace-nowrap text-muted-foreground tabular-nums">
+                      <When ms={r.last_seen} now={now} />
+                    </TableCell>
                     <TableCell class="w-full max-w-0 py-2.5">
                       <a
                         href={`/r/${r.fingerprint}?key=${encodeURIComponent(state.key)}`}
-                        class="line-clamp-2 rounded-sm font-medium wrap-anywhere sm:line-clamp-1 underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-foreground/30"
+                        class="line-clamp-2 rounded-sm font-medium wrap-anywhere underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-foreground/30 sm:line-clamp-1"
                       >
                         {reportTitle(r)}
                       </a>
                       <div class="mt-1.5 sm:hidden">{status}</div>
                     </TableCell>
-                    <TableCell class="hidden font-mono text-xs md:table-cell">
-                      {r.build_id}
+                    <TableCell class="hidden font-mono text-xs whitespace-nowrap md:table-cell">
+                      {vs[0] ? (
+                        // The newest version this crash was seen on. The latest release stands out.
+                        <span class={vs[0] === latest ? undefined : "text-muted-foreground"}>
+                          {vs[0]}
+                        </span>
+                      ) : null}
+                      {vs.length > 1 ? (
+                        <span class="text-muted-foreground" title={vs.join(", ")}>
+                          {" "}
+                          +{vs.length - 1}
+                        </span>
+                      ) : null}
                     </TableCell>
-                    <TableCell class="pr-4 whitespace-nowrap text-muted-foreground tabular-nums sm:pr-2">
-                      <When ms={r.last_seen} now={now} />
+                    <TableCell class="hidden text-xs whitespace-nowrap text-muted-foreground md:table-cell">
+                      {ps.join(", ")}
+                    </TableCell>
+                    <TableCell class="hidden lg:table-cell">
+                      {trend ? <Trend days={trend} /> : null}
+                    </TableCell>
+                    <TableCell class="pr-4 font-semibold tabular-nums sm:pr-2">
+                      {num(r.count)}
                     </TableCell>
                     <TableCell class="hidden pr-4 sm:table-cell">{status}</TableCell>
                   </TableRow>

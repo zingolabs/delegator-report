@@ -12,8 +12,9 @@ Read `README.md` for operations. The endpoint contract is the OpenAPI spec at `/
 - `server/utils/env.ts`: bindings, token check, ETag, stack normalize/clean.
 - `server/components/ui/`: design system. Imports only preact, clsx, tailwind-merge. Never imports from routes, utils, or sibling components.
 - `server/components/`: layout and page components. Routes render them through `html()` in `server/utils/html.ts`.
+- `server/components/day-chart.tsx`: the charts (`DayChart`, `Trend`). Static HTML and SVG. Series colours are `--series-*` in `src/app.css`.
 - `src/app.css`: Tailwind entry and design tokens. Retheme here, not in components.
-- `server/utils/reports.ts`: row types, the shared `since`/`limit`/`buildId`/`untriaged` filter and query, the list page's extra params (`readPageFilter`: `q`, `triaged`, `platform`, `sort`, `dir`), batched child-row loaders (`occurrencesFor`, `eventsFor`), and `breakdown`. Add a list param here, never in a route.
+- `server/utils/reports.ts`: row types, the shared `since`/`limit`/`buildId`/`untriaged` filter and query, the list page's extra params (`readPageFilter`: `q`, `triaged`, `version`, `platform`, `sort`, `dir`) and its one-batch query (`listPage`), batched child-row loaders (`occurrencesFor`, `eventsFor`), and `breakdown`. Add a list param here, never in a route.
 - `schema.sql`: the whole schema, for fresh databases. The Worker is deployed, so a schema change also needs `migrations/NNNN-<label>.sql` with the ALTER statements for the remote D1. After a change: `pnpm db:reset:local`, `pnpm schema:snapshot <label>`, `pnpm schema:diff` to derive the migration, then `pnpm erd` and update the diagram in `README.md` and `docs/erd.mmd`.
 - `scripts/`: Node-only TypeScript (own `tsconfig.json`, `@types/node`). Never imported by the Worker.
 - `wrangler.toml`: bindings and compat date. Secrets (`REPORT_TOKEN`, `READ_TOKEN`, `WRITE_TOKEN`) never go here.
@@ -21,7 +22,7 @@ Read `README.md` for operations. The endpoint contract is the OpenAPI spec at `/
 ## Rules
 
 - `POST /report` always returns 204. Validation failures, rate limits, and D1 errors are logged and swallowed. Keep it that way.
-- Data model: `reports` is the per-fingerprint aggregate and triage state; `occurrences` is one row per received report (first kept forever, then newest 20). Per-report attributes (version, platform, sample) live only in `occurrences`.
+- Data model: `reports` is the per-fingerprint aggregate and triage state; `occurrences` is one row per received report (first kept forever, then newest 20). The sample lives only in `occurrences`. `daily_counts` is one counter per fingerprint, UTC day, version and platform, bumped by `/report` in its own statement and never pruned; it is the source for trends and for the version and platform filters, because `occurrences` loses rows.
 - Report fields (`stack`, `message`, `breadcrumbs`, samples) are untrusted. `/queue` is the only shape safe to hand an agent; keep free-text out of it. There is no reporter identity field; provenance is Triage card #2.
 - Three roles, three tokens. `REPORT_TOKEN` (header `x-report-token`) may only insert or bump a count; it is extractable from the app, so the create path must stay append-only and `first_sample` is never overwritten. `READ_TOKEN` reads. `WRITE_TOKEN` triages and appends to `triage_events`. A route never accepts a token from a lower role.
 - Token checks go through `checkKey` (query `key=`) or `checkReportToken` (header) and return 403, never 404. `/report` stays silent and returns 204 on a bad token.
