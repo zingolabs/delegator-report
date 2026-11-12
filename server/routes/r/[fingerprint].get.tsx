@@ -57,7 +57,8 @@ export default defineEventHandler(async (event) => {
     eventsFor(env.DB, [fingerprint]),
   ]);
   const url = getRequestURL(event);
-  const feedHref = `${url.protocol}//${url.host}/feed.xml?key=${encodeURIComponent(String(getQuery(event).key ?? ""))}`;
+  const key = encodeURIComponent(String(getQuery(event).key ?? ""));
+  const feedHref = `${url.protocol}//${url.host}/feed.xml?key=${key}`;
   return html(
     event,
     <ReportPage
@@ -65,6 +66,7 @@ export default defineEventHandler(async (event) => {
       occurrences={occ.get(fingerprint)}
       events={ev.get(fingerprint)}
       feedHref={feedHref}
+      homeHref={`/?key=${key}`}
     />,
   );
 });

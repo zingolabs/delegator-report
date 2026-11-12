@@ -41,6 +41,10 @@ export interface ListFilter {
   limit: number;
   buildId: string;
   untriaged: boolean;
+  /** Page-only filters. The JSON and feed routes do not read them. */
+  triaged?: boolean;
+  platform?: string;
+  q?: string;
 }
 
 export const MAX_LIMIT = 500;
@@ -56,11 +60,30 @@ export function readFilter(event: H3Event, defaultLimit = MAX_LIMIT): ListFilter
   };
 }
 
-export async function listReports(
-  db: D1Database,
-  f: ListFilter,
-  order: "count" | "first_seen" = "count",
-): Promise<ReportRow[]> {
+export const SORT_KEYS = ["count", "last_seen"] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+export interface ListSort {
+  key: SortKey;
+  dir: "asc" | "desc";
+}
+
+export const PAGE_LIMIT = 100;
+
+/** Query params for the HTML list: the shared filter plus `triaged`, `platform`, `q`, `sort`, `dir`. */
+export function readPageFilter(event: H3Event): { filter: ListFilter; sort: ListSort } {
+  const q = getQuery(event);
+  const filter = readFilter(event, PAGE_LIMIT);
+  filter.triaged = !filter.untriaged && (q.triaged === "1" || q.triaged === "true");
+  filter.platform = String(q.platform ?? "").slice(0, 64);
+  filter.q = String(q.q ?? "")
+    .trim()
+    .slice(0, 200);
+  const key = SORT_KEYS.find((k) => k === q.sort) ?? "count";
+  return { filter, sort: { key, dir: q.dir === "asc" ? "asc" : "desc" } };
+}
+
+/** WHERE clause and binds for a filter. `limit` is not part of it. */
+function whereOf(f: ListFilter): { sql: string; binds: (string | number)[] } {
   const where: string[] = [];
   const binds: (string | number)[] = [];
   if (f.since > 0) {
@@ -72,14 +95,82 @@ export async function listReports(
     binds.push(f.buildId);
   }
   if (f.untriaged) where.push("triaged_at IS NULL");
-  const orderBy = order === "count" ? "count DESC, last_seen DESC" : "first_seen DESC";
-  binds.push(f.limit);
-  const sql = `SELECT * FROM reports ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY ${orderBy} LIMIT ?`;
+  if (f.triaged) where.push("triaged_at IS NOT NULL");
+  if (f.platform) {
+    where.push(
+      "EXISTS (SELECT 1 FROM occurrences o WHERE o.fingerprint = reports.fingerprint AND o.platform = ?)",
+    );
+    binds.push(f.platform);
+  }
+  if (f.q) {
+    // instr, not LIKE: D1 caps LIKE patterns at 50 bytes and the text has no wildcards to escape.
+    const cols = ["message", "stack_clean", "fingerprint", "build_id", "coalesce(note, '')"];
+    where.push("(" + cols.map((c) => `instr(lower(${c}), lower(?)) > 0`).join(" OR ") + ")");
+    for (const _ of cols) binds.push(f.q);
+  }
+  return { sql: where.length ? "WHERE " + where.join(" AND ") : "", binds };
+}
+
+/** `sort.key` and `sort.dir` come from closed sets, so they are safe to interpolate. */
+function orderOf(sort: "count" | "first_seen" | ListSort): string {
+  if (sort === "count") return "count DESC, last_seen DESC";
+  if (sort === "first_seen") return "first_seen DESC";
+  const dir = sort.dir === "asc" ? "ASC" : "DESC";
+  return sort.key === "last_seen"
+    ? `last_seen ${dir}, fingerprint`
+    : `${sort.key} ${dir}, last_seen DESC, fingerprint`;
+}
+
+export async function listReports(
+  db: D1Database,
+  f: ListFilter,
+  order: "count" | "first_seen" | ListSort = "count",
+): Promise<ReportRow[]> {
+  const w = whereOf(f);
+  const sql = `SELECT * FROM reports ${w.sql} ORDER BY ${orderOf(order)} LIMIT ?`;
   const { results } = await db
     .prepare(sql)
-    .bind(...binds)
+    .bind(...w.binds, f.limit)
     .all<ReportRow>();
   return results;
+}
+
+/** `listReports` plus the count of all matches, for the HTML index. */
+export async function listPage(
+  db: D1Database,
+  f: ListFilter,
+  sort: ListSort,
+): Promise<{ rows: ReportRow[]; matched: number }> {
+  const w = whereOf(f);
+  const [list, count] = await db.batch<ReportRow | { n: number }>([
+    db
+      .prepare(`SELECT * FROM reports ${w.sql} ORDER BY ${orderOf(sort)} LIMIT ?`)
+      .bind(...w.binds, f.limit),
+    db.prepare(`SELECT COUNT(*) AS n FROM reports ${w.sql}`).bind(...w.binds),
+  ]);
+  return {
+    rows: (list?.results ?? []) as ReportRow[],
+    matched: (count?.results[0] as { n: number } | undefined)?.n ?? 0,
+  };
+}
+
+/** Filter choices for the HTML index, independent of the active filter. */
+export interface Facets {
+  builds: string[];
+  platforms: string[];
+}
+
+export async function facets(db: D1Database): Promise<Facets> {
+  const [builds, platforms] = await db.batch<{ v: string }>([
+    db.prepare(
+      "SELECT build_id AS v FROM reports GROUP BY build_id ORDER BY MAX(last_seen) DESC LIMIT 12",
+    ),
+    db.prepare("SELECT DISTINCT platform AS v FROM occurrences ORDER BY platform LIMIT 12"),
+  ]);
+  return {
+    builds: (builds?.results ?? []).map((r) => String(r.v)),
+    platforms: (platforms?.results ?? []).map((r) => String(r.v)),
+  };
 }
 
 function groupBy<T extends { fingerprint: string }>(rows: T[]): Map<string, T[]> {

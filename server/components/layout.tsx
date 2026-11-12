@@ -3,11 +3,13 @@ import type { ComponentChildren } from "preact";
 interface Props {
   title: string;
   feedHref?: string;
+  /** Room for a table. Reading pages keep the narrow column. */
+  wide?: boolean;
   children?: ComponentChildren;
 }
 
 /** Document shell. One stylesheet, no scripts. */
-export function Layout({ title, feedHref, children }: Props) {
+export function Layout({ title, feedHref, wide, children }: Props) {
   return (
     <html lang="en">
       <head>
@@ -26,7 +28,9 @@ export function Layout({ title, feedHref, children }: Props) {
         ) : null}
       </head>
       <body class="min-h-screen antialiased">
-        <main class="mx-auto max-w-4xl p-6 flex flex-col gap-6">{children}</main>
+        <main class={`mx-auto flex flex-col gap-6 p-6 ${wide ? "max-w-6xl" : "max-w-4xl"}`}>
+          {children}
+        </main>
       </body>
     </html>
   );
