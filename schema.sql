@@ -1,5 +1,5 @@
--- delegator-report D1 schema. Idempotent: safe to re-run.
--- Not deployed yet: edit in place and `pnpm db:reset:local`. Start a migrations/ folder on first deploy.
+-- delegator-report D1 schema, for fresh databases. Idempotent: safe to re-run.
+-- The Worker is deployed: a change here also needs migrations/NNNN-<label>.sql for the remote D1.
 
 -- One row per crash fingerprint: the aggregate and the triage state.
 CREATE TABLE IF NOT EXISTS reports (
@@ -30,6 +30,19 @@ CREATE TABLE IF NOT EXISTS occurrences (
 );
 
 CREATE INDEX IF NOT EXISTS occurrences_fp_seen ON occurrences (fingerprint, seen_at DESC);
+
+-- One counter per fingerprint, UTC day, version and platform. Never pruned, so it is the
+-- history (trends, versions, platforms) that occurrences cannot give. Bumped by POST /report.
+CREATE TABLE IF NOT EXISTS daily_counts (
+  fingerprint TEXT NOT NULL REFERENCES reports(fingerprint) ON DELETE CASCADE,
+  day         INTEGER NOT NULL,   -- UTC day number: floor(unix ms / 86400000)
+  version     TEXT NOT NULL,
+  platform    TEXT NOT NULL,
+  count       INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (fingerprint, day, version, platform)
+);
+
+CREATE INDEX IF NOT EXISTS daily_counts_day ON daily_counts (day);
 
 -- Dumb per-client-per-hour rate limit counter.
 CREATE TABLE IF NOT EXISTS ratelimit (

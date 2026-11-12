@@ -1,6 +1,6 @@
 import { defineEventHandler, getQuery } from "h3";
 import { useEnv, checkKey } from "../utils/env";
-import { readPageFilter, listPage, facets, SORT_KEYS } from "../utils/reports";
+import { readPageFilter, listPage, dayOf, SORT_KEYS } from "../utils/reports";
 import { html } from "../utils/html";
 import { ReportListPage } from "../components/report-list-page";
 import { defineRouteMeta } from "nitropack/runtime";
@@ -10,7 +10,8 @@ defineRouteMeta({
     tags: ["read"],
     summary: "HTML list of all fingerprints",
     description:
-      "The page for humans: search, filters and sorting, all through query params and plain links. " +
+      "The page for humans: newest first, with search, filters, sorting, a 14-day trend for each row " +
+      "and a chart of reports per day by app version. All state is query params and plain links. " +
       "Static HTML, no scripts. Each row links to /r/{fingerprint}.",
     parameters: [
       {
@@ -36,15 +37,21 @@ defineRouteMeta({
       },
       { name: "buildId", in: "query", schema: { type: "string" } },
       {
+        name: "version",
+        in: "query",
+        schema: { type: "string" },
+        description: "fingerprints reported on this app version",
+      },
+      {
         name: "platform",
         in: "query",
         schema: { type: "string" },
-        description: "fingerprints with a retained occurrence on this platform",
+        description: "fingerprints reported on this platform; with version, on both at once",
       },
       {
         name: "sort",
         in: "query",
-        schema: { type: "string", enum: [...SORT_KEYS], default: "count" },
+        schema: { type: "string", enum: [...SORT_KEYS], default: "last_seen" },
       },
       {
         name: "dir",
@@ -72,10 +79,8 @@ export default defineEventHandler(async (event) => {
   if (!checkKey(event, env.READ_TOKEN)) return "forbidden";
 
   const { filter, sort } = readPageFilter(event);
-  const [{ rows, matched }, f] = await Promise.all([
-    listPage(env.DB, filter, sort),
-    facets(env.DB),
-  ]);
+  const now = Date.now();
+  const page = await listPage(env.DB, filter, sort, dayOf(now));
   const key = String(getQuery(event).key ?? "");
   return html(
     event,
@@ -85,14 +90,13 @@ export default defineEventHandler(async (event) => {
         q: filter.q ?? "",
         status: filter.untriaged ? "untriaged" : filter.triaged ? "triaged" : "all",
         buildId: filter.buildId,
+        version: filter.version ?? "",
         platform: filter.platform ?? "",
         sort,
         limit: filter.limit,
       }}
-      rows={rows}
-      matched={matched}
-      facets={f}
-      now={Date.now()}
+      page={page}
+      now={now}
       feedHref={`/feed.xml?key=${encodeURIComponent(key)}`}
     />,
   );

@@ -37,10 +37,12 @@ Always `204`, even when the report is dropped. Do not await, retry, or show fail
 
 ## For humans
 
-Open `/?key=<READ_TOKEN>` for the list of all fingerprints. The page has a search bar, filters
-(status, build, platform) and sortable columns (count, last seen). All of them are
-query parameters, so a filtered view is a link you can bookmark. Each row links to a page with
-the full report.
+Open `/?key=<READ_TOKEN>` for the list of all fingerprints, newest first. Each row shows the
+app version, the platform and a 14-day trend. Above the list is a chart of reports per day by
+version. The page has a search bar, filters (status, version, platform) and sortable columns
+(last seen, count). All of them are query parameters, so a filtered view is a link you can
+bookmark. Each row links to a page with the full report, where each retained occurrence opens
+to its own message, breadcrumbs and stack.
 
 Subscribe a feed reader to `/feed.xml?key=<READ_TOKEN>` to get new crashes as they arrive. Each
 entry links to the same report page. New crash types appear once. A recurring crash updates its
@@ -69,7 +71,8 @@ a password manager. To rotate one, change its line, push, then update the holder
 `READ_TOKEN` breaks every feed subscription URL.
 
 **Schema changes.** `schema.sql` is the full schema for a fresh database. The deployed baseline
-is `docs/schema/0001-20261031.sql`.
+is `docs/schema/0001-20261031.sql`. `migrations/0001-daily-counts.sql` adds the daily counters
+(`docs/schema/0002-20261112-daily-counts.sql`).
 
 ```sh
 pnpm db:reset:local                    # apply schema.sql + seed locally
@@ -85,6 +88,14 @@ and the deploy. Production holds real user data. Never seed or reset it.
 
 ```mermaid
 erDiagram
+    daily_counts {
+        INTEGER count
+        INTEGER day PK
+        TEXT fingerprint PK,FK
+        TEXT platform PK
+        TEXT version PK
+    }
+
     occurrences {
         TEXT fingerprint FK
         INTEGER id PK
@@ -117,6 +128,7 @@ erDiagram
         TEXT pr_url
     }
 
+    daily_counts }o--|| reports : ""
     occurrences }o--|| reports : ""
     triage_events }o--|| reports : ""
 ```

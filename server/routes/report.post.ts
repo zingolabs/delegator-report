@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody, getRequestIP, setResponseStatus } from "h3";
 import { useEnv, sha256, normalizeStack, cleanStack, clip, checkReportToken } from "../utils/env";
+import { dayOf } from "../utils/reports";
 import { defineRouteMeta } from "nitropack/runtime";
 
 defineRouteMeta({
@@ -125,6 +126,18 @@ export default defineEventHandler(async (event) => {
          )`,
       ).bind(fingerprint, MAX_OCCURRENCES),
     ]);
+
+    // Own statement, own catch: a failure here must never cost the report itself.
+    try {
+      await env.DB.prepare(
+        `INSERT INTO daily_counts (fingerprint, day, version, platform, count) VALUES (?1, ?2, ?3, ?4, 1)
+         ON CONFLICT(fingerprint, day, version, platform) DO UPDATE SET count = count + 1`,
+      )
+        .bind(fingerprint, dayOf(now), body.version, body.platform)
+        .run();
+    } catch (err) {
+      console.error("daily count failed", err);
+    }
   } catch (err) {
     console.error("report failed", err);
   }

@@ -43,6 +43,7 @@ export interface ListFilter {
   untriaged: boolean;
   /** Page-only filters. The JSON and feed routes do not read them. */
   triaged?: boolean;
+  version?: string;
   platform?: string;
   q?: string;
 }
@@ -60,7 +61,7 @@ export function readFilter(event: H3Event, defaultLimit = MAX_LIMIT): ListFilter
   };
 }
 
-export const SORT_KEYS = ["count", "last_seen"] as const;
+export const SORT_KEYS = ["last_seen", "count"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 export interface ListSort {
   key: SortKey;
@@ -69,17 +70,40 @@ export interface ListSort {
 
 export const PAGE_LIMIT = 100;
 
-/** Query params for the HTML list: the shared filter plus `triaged`, `platform`, `q`, `sort`, `dir`. */
+/** Query params for the HTML list: the shared filter plus `triaged`, `version`, `platform`, `q`, `sort`, `dir`. Newest first unless `sort` says otherwise. */
 export function readPageFilter(event: H3Event): { filter: ListFilter; sort: ListSort } {
   const q = getQuery(event);
   const filter = readFilter(event, PAGE_LIMIT);
   filter.triaged = !filter.untriaged && (q.triaged === "1" || q.triaged === "true");
+  filter.version = String(q.version ?? "").slice(0, 64);
   filter.platform = String(q.platform ?? "").slice(0, 64);
   filter.q = String(q.q ?? "")
     .trim()
     .slice(0, 200);
-  const key = SORT_KEYS.find((k) => k === q.sort) ?? "count";
+  const key = SORT_KEYS.find((k) => k === q.sort) ?? "last_seen";
   return { filter, sort: { key, dir: q.dir === "asc" ? "asc" : "desc" } };
+}
+
+export const DAY_MS = 86_400_000;
+/** UTC day number, the unit of `daily_counts.day`. */
+export const dayOf = (ms: number): number => Math.floor(ms / DAY_MS);
+/** Days in a row's trend line, and in the chart. Both end today. */
+export const TREND_DAYS = 14;
+export const CHART_DAYS = 30;
+
+/** ` AND version = ? AND platform = ?` for the parts of the filter that live in daily_counts. */
+function dailyCond(f: ListFilter, prefix = ""): { sql: string; binds: string[] } {
+  let sql = "";
+  const binds: string[] = [];
+  if (f.version) {
+    sql += ` AND ${prefix}version = ?`;
+    binds.push(f.version);
+  }
+  if (f.platform) {
+    sql += ` AND ${prefix}platform = ?`;
+    binds.push(f.platform);
+  }
+  return { sql, binds };
 }
 
 /** WHERE clause and binds for a filter. `limit` is not part of it. */
@@ -96,11 +120,14 @@ function whereOf(f: ListFilter): { sql: string; binds: (string | number)[] } {
   }
   if (f.untriaged) where.push("triaged_at IS NULL");
   if (f.triaged) where.push("triaged_at IS NOT NULL");
-  if (f.platform) {
+  // Version and platform come from the daily counters, which are never pruned. Both in one
+  // EXISTS: "0.4.2 on ios" means one counter with both, not one of each.
+  const d = dailyCond(f, "d.");
+  if (d.sql) {
     where.push(
-      "EXISTS (SELECT 1 FROM occurrences o WHERE o.fingerprint = reports.fingerprint AND o.platform = ?)",
+      `EXISTS (SELECT 1 FROM daily_counts d WHERE d.fingerprint = reports.fingerprint${d.sql})`,
     );
-    binds.push(f.platform);
+    binds.push(...d.binds);
   }
   if (f.q) {
     // instr, not LIKE: D1 caps LIKE patterns at 50 bytes and the text has no wildcards to escape.
@@ -135,41 +162,145 @@ export async function listReports(
   return results;
 }
 
-/** `listReports` plus the count of all matches, for the HTML index. */
+/** One stacked-bar cell: reports on a day for a version. */
+export interface DayCount {
+  day: number;
+  version: string;
+  n: number;
+}
+
+/**
+ * Newest version first. Version strings do not sort reliably ("0.10" vs "0.9", build suffixes),
+ * so the order is by the day a version was first reported, then by a numeric-aware compare.
+ */
+function orderVersions(rows: { v: string; first_day: number }[]): string[] {
+  return rows
+    .toSorted(
+      (a, b) => b.first_day - a.first_day || b.v.localeCompare(a.v, "en", { numeric: true }),
+    )
+    .map((r) => r.v);
+}
+
+const VERSIONS_SQL =
+  "SELECT version AS v, MIN(day) AS first_day FROM daily_counts GROUP BY version";
+
+export interface ListPage {
+  rows: ReportRow[];
+  matched: number;
+  /** Per fingerprint: every version and platform it was reported on. */
+  versionsOf: Map<string, string[]>;
+  platformsOf: Map<string, string[]>;
+  /** Per fingerprint: reports per day, TREND_DAYS long, oldest first. Follows the version and platform filter. */
+  trends: Map<string, number[]>;
+  /** Reports per day and version over CHART_DAYS, for everything that matches the filter. */
+  chart: DayCount[];
+  /** All versions, newest first, and all platforms. Independent of the filter. */
+  versions: string[];
+  platforms: string[];
+}
+
+type Row = Record<string, string | number | null>;
+
+function addTo(m: Map<string, string[]>, k: string, v: string): void {
+  const list = m.get(k) ?? [];
+  if (!list.includes(v)) list.push(v);
+  m.set(k, list);
+}
+
+/** Everything the HTML index shows, in one round trip. */
 export async function listPage(
   db: D1Database,
   f: ListFilter,
   sort: ListSort,
-): Promise<{ rows: ReportRow[]; matched: number }> {
+  today: number,
+): Promise<ListPage> {
   const w = whereOf(f);
-  const [list, count] = await db.batch<ReportRow | { n: number }>([
+  const d = dailyCond(f);
+  const pageOf = `SELECT fingerprint FROM reports ${w.sql} ORDER BY ${orderOf(sort)} LIMIT ?`;
+  const res = await db.batch<Row>([
     db
       .prepare(`SELECT * FROM reports ${w.sql} ORDER BY ${orderOf(sort)} LIMIT ?`)
       .bind(...w.binds, f.limit),
     db.prepare(`SELECT COUNT(*) AS n FROM reports ${w.sql}`).bind(...w.binds),
+    db
+      .prepare(
+        `SELECT fingerprint, version, platform FROM daily_counts
+         WHERE fingerprint IN (${pageOf}) GROUP BY fingerprint, version, platform`,
+      )
+      .bind(...w.binds, f.limit),
+    db
+      .prepare(
+        `SELECT fingerprint, day, SUM(count) AS n FROM daily_counts
+         WHERE day > ?${d.sql} AND fingerprint IN (${pageOf}) GROUP BY fingerprint, day`,
+      )
+      .bind(today - TREND_DAYS, ...d.binds, ...w.binds, f.limit),
+    db
+      .prepare(
+        `SELECT day, version, SUM(count) AS n FROM daily_counts
+         WHERE day > ?${d.sql} AND fingerprint IN (SELECT fingerprint FROM reports ${w.sql})
+         GROUP BY day, version`,
+      )
+      .bind(today - CHART_DAYS, ...d.binds, ...w.binds),
+    db.prepare(VERSIONS_SQL),
+    db.prepare("SELECT DISTINCT platform AS v FROM daily_counts ORDER BY platform LIMIT 12"),
   ]);
+  const at = (i: number): Row[] => res[i]?.results ?? [];
+
+  const versions = orderVersions(at(5) as { v: string; first_day: number }[]);
+  const rank = new Map(versions.map((v, i) => [v, i]));
+  const versionsOf = new Map<string, string[]>();
+  const platformsOf = new Map<string, string[]>();
+  for (const r of at(2)) {
+    addTo(versionsOf, String(r.fingerprint), String(r.version));
+    addTo(platformsOf, String(r.fingerprint), String(r.platform));
+  }
+  for (const list of versionsOf.values())
+    list.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
+  for (const list of platformsOf.values()) list.sort();
+
+  const trends = new Map<string, number[]>();
+  for (const r of at(3)) {
+    const fp = String(r.fingerprint);
+    const days = trends.get(fp) ?? Array.from({ length: TREND_DAYS }, () => 0);
+    const i = Number(r.day) - (today - TREND_DAYS + 1);
+    if (i >= 0 && i < TREND_DAYS) days[i] = Number(r.n);
+    trends.set(fp, days);
+  }
+
   return {
-    rows: (list?.results ?? []) as ReportRow[],
-    matched: (count?.results[0] as { n: number } | undefined)?.n ?? 0,
+    rows: at(0) as unknown as ReportRow[],
+    matched: Number(at(1)[0]?.n ?? 0),
+    versionsOf,
+    platformsOf,
+    trends,
+    chart: at(4).map((r) => ({ day: Number(r.day), version: String(r.version), n: Number(r.n) })),
+    versions,
+    platforms: at(6).map((r) => String(r.v)),
   };
 }
 
-/** Filter choices for the HTML index, independent of the active filter. */
-export interface Facets {
-  builds: string[];
-  platforms: string[];
-}
-
-export async function facets(db: D1Database): Promise<Facets> {
-  const [builds, platforms] = await db.batch<{ v: string }>([
-    db.prepare(
-      "SELECT build_id AS v FROM reports GROUP BY build_id ORDER BY MAX(last_seen) DESC LIMIT 12",
-    ),
-    db.prepare("SELECT DISTINCT platform AS v FROM occurrences ORDER BY platform LIMIT 12"),
+/** One fingerprint's reports per day and version over CHART_DAYS, plus the global version order. */
+export async function dailyFor(
+  db: D1Database,
+  fingerprint: string,
+  today: number,
+): Promise<{ chart: DayCount[]; versions: string[] }> {
+  const res = await db.batch<Row>([
+    db
+      .prepare(
+        `SELECT day, version, SUM(count) AS n FROM daily_counts
+         WHERE fingerprint = ? AND day > ? GROUP BY day, version`,
+      )
+      .bind(fingerprint, today - CHART_DAYS),
+    db.prepare(VERSIONS_SQL),
   ]);
   return {
-    builds: (builds?.results ?? []).map((r) => String(r.v)),
-    platforms: (platforms?.results ?? []).map((r) => String(r.v)),
+    chart: (res[0]?.results ?? []).map((r) => ({
+      day: Number(r.day),
+      version: String(r.version),
+      n: Number(r.n),
+    })),
+    versions: orderVersions((res[1]?.results ?? []) as { v: string; first_day: number }[]),
   };
 }
 
