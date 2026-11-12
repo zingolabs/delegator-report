@@ -71,6 +71,11 @@
   }
 }
 
+/* Chart fill for the second OS of a release: the series hue, hatched with the surface. */
+.series-hatch {
+  background-image: repeating-linear-gradient(135deg, transparent 0 2px, var(--card) 2px 3.5px);
+}
+
 /*
  * Page-to-page motion without a script. Search, filters and sorting are plain navigations;
  * the browser cross-fades the documents and moves the parts that carry a view-transition-name:

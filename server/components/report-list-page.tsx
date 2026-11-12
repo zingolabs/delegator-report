@@ -60,6 +60,9 @@ function params(s: ListState): [string, string][] {
 
 const hrefOf = (s: ListState): string => "/?" + new URLSearchParams(params(s)).toString();
 
+const OS_NAMES: Record<string, string> = { ios: "iOS", android: "Android" };
+const osName = (os: string): string => OS_NAMES[os] ?? os;
+
 const num = (n: number): string => n.toLocaleString("en-US");
 const plural = (n: number, one: string): string => `${num(n)} ${one}${n === 1 ? "" : "s"}`;
 const iso = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
@@ -279,7 +282,7 @@ export function ReportListPage({ state, page, now, feedHref }: Props) {
               choices={[
                 { label: "All", href: hrefOf({ ...state, platform: "" }), active: !state.platform },
                 ...platforms.map((p) => ({
-                  label: p,
+                  label: osName(p),
                   href: hrefOf({ ...state, platform: p }),
                   active: state.platform === p,
                 })),
@@ -373,7 +376,7 @@ export function ReportListPage({ state, page, now, feedHref }: Props) {
                     </TableCell>
                     <TableCell class="hidden font-mono text-xs whitespace-nowrap md:table-cell">
                       {vs[0] ? (
-                        // The newest version this crash was seen on. The latest release stands out.
+                        // The newest release this crash was seen on. The latest one stands out.
                         <span class={vs[0] === latest ? undefined : "text-muted-foreground"}>
                           {vs[0]}
                         </span>
@@ -386,7 +389,7 @@ export function ReportListPage({ state, page, now, feedHref }: Props) {
                       ) : null}
                     </TableCell>
                     <TableCell class="hidden text-xs whitespace-nowrap text-muted-foreground md:table-cell">
-                      {ps.join(", ")}
+                      {ps.map(osName).join(", ")}
                     </TableCell>
                     <TableCell class="hidden lg:table-cell">
                       {trend ? <Trend days={trend} /> : null}

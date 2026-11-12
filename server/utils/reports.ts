@@ -91,17 +91,31 @@ export const dayOf = (ms: number): number => Math.floor(ms / DAY_MS);
 export const TREND_DAYS = 14;
 export const CHART_DAYS = 30;
 
-/** ` AND version = ? AND platform = ?` for the parts of the filter that live in daily_counts. */
+/**
+ * The app sends `version` as "0.0.7 (43)": a release and a store build number that differs per
+ * platform. It sends `platform` as "ios 26.7.1": an OS and its version. People think in the
+ * release and the OS, so the list, the filters and the charts use these two.
+ */
+export const releaseOf = (version: string): string =>
+  version.replace(/\s*\([^)]*\)\s*$/, "") || version;
+export const osOf = (platform: string): string =>
+  (platform.trim().split(/\s+/)[0] ?? platform).toLowerCase();
+
+/**
+ * The parts of the filter that live in daily_counts. `version` matches a release ("0.0.7", any
+ * build) or one exact string; `platform` matches an OS ("ios", any OS version) or one exact
+ * string. substr, not LIKE: D1 caps LIKE patterns at 50 bytes.
+ */
 function dailyCond(f: ListFilter, prefix = ""): { sql: string; binds: string[] } {
   let sql = "";
   const binds: string[] = [];
   if (f.version) {
-    sql += ` AND ${prefix}version = ?`;
-    binds.push(f.version);
+    sql += ` AND (${prefix}version = ? OR substr(${prefix}version, 1, length(?) + 2) = ? || ' (')`;
+    binds.push(f.version, f.version, f.version);
   }
   if (f.platform) {
-    sql += ` AND ${prefix}platform = ?`;
-    binds.push(f.platform);
+    sql += ` AND (lower(${prefix}platform) = lower(?) OR lower(substr(${prefix}platform, 1, length(?) + 1)) = lower(?) || ' ')`;
+    binds.push(f.platform, f.platform, f.platform);
   }
   return { sql, binds };
 }
@@ -162,23 +176,42 @@ export async function listReports(
   return results;
 }
 
-/** One stacked-bar cell: reports on a day for a version. */
+/** One stacked-bar cell: reports on a day for a release on an OS. */
 export interface DayCount {
   day: number;
+  /** Release, without the build number. */
   version: string;
+  os: string;
   n: number;
 }
 
 /**
- * Newest version first. Version strings do not sort reliably ("0.10" vs "0.9", build suffixes),
- * so the order is by the day a version was first reported, then by a numeric-aware compare.
+ * Releases, newest first. Version strings do not sort reliably ("0.10" vs "0.9"), so the order
+ * is by the day a release was first reported, then by a numeric-aware compare.
  */
-function orderVersions(rows: { v: string; first_day: number }[]): string[] {
-  return rows
-    .toSorted(
-      (a, b) => b.first_day - a.first_day || b.v.localeCompare(a.v, "en", { numeric: true }),
-    )
-    .map((r) => r.v);
+function orderReleases(rows: { v: string; first_day: number }[]): string[] {
+  const first = new Map<string, number>();
+  for (const r of rows) {
+    const k = releaseOf(r.v);
+    first.set(k, Math.min(first.get(k) ?? Infinity, r.first_day));
+  }
+  return [...first]
+    .toSorted((a, b) => b[1] - a[1] || b[0].localeCompare(a[0], "en", { numeric: true }))
+    .map(([v]) => v);
+}
+
+/** Sum cells that share a day, a release and an OS. */
+function byRelease(rows: Row[]): DayCount[] {
+  const m = new Map<string, DayCount>();
+  for (const r of rows) {
+    const version = releaseOf(String(r.version));
+    const os = osOf(String(r.platform));
+    const k = `${r.day} ${os} ${version}`;
+    const cell = m.get(k) ?? { day: Number(r.day), version, os, n: 0 };
+    cell.n += Number(r.n);
+    m.set(k, cell);
+  }
+  return [...m.values()];
 }
 
 const VERSIONS_SQL =
@@ -187,14 +220,14 @@ const VERSIONS_SQL =
 export interface ListPage {
   rows: ReportRow[];
   matched: number;
-  /** Per fingerprint: every version and platform it was reported on. */
+  /** Per fingerprint: every release and OS it was reported on. */
   versionsOf: Map<string, string[]>;
   platformsOf: Map<string, string[]>;
   /** Per fingerprint: reports per day, TREND_DAYS long, oldest first. Follows the version and platform filter. */
   trends: Map<string, number[]>;
-  /** Reports per day and version over CHART_DAYS, for everything that matches the filter. */
+  /** Reports per day, release and OS over CHART_DAYS, for everything that matches the filter. */
   chart: DayCount[];
-  /** All versions, newest first, and all platforms. Independent of the filter. */
+  /** All releases, newest first, and all OSes. Independent of the filter. */
   versions: string[];
   platforms: string[];
 }
@@ -236,23 +269,23 @@ export async function listPage(
       .bind(today - TREND_DAYS, ...d.binds, ...w.binds, f.limit),
     db
       .prepare(
-        `SELECT day, version, SUM(count) AS n FROM daily_counts
+        `SELECT day, version, platform, SUM(count) AS n FROM daily_counts
          WHERE day > ?${d.sql} AND fingerprint IN (SELECT fingerprint FROM reports ${w.sql})
-         GROUP BY day, version`,
+         GROUP BY day, version, platform`,
       )
       .bind(today - CHART_DAYS, ...d.binds, ...w.binds),
     db.prepare(VERSIONS_SQL),
-    db.prepare("SELECT DISTINCT platform AS v FROM daily_counts ORDER BY platform LIMIT 12"),
+    db.prepare("SELECT DISTINCT platform AS v FROM daily_counts ORDER BY platform LIMIT 500"),
   ]);
   const at = (i: number): Row[] => res[i]?.results ?? [];
 
-  const versions = orderVersions(at(5) as { v: string; first_day: number }[]);
+  const versions = orderReleases(at(5) as { v: string; first_day: number }[]);
   const rank = new Map(versions.map((v, i) => [v, i]));
   const versionsOf = new Map<string, string[]>();
   const platformsOf = new Map<string, string[]>();
   for (const r of at(2)) {
-    addTo(versionsOf, String(r.fingerprint), String(r.version));
-    addTo(platformsOf, String(r.fingerprint), String(r.platform));
+    addTo(versionsOf, String(r.fingerprint), releaseOf(String(r.version)));
+    addTo(platformsOf, String(r.fingerprint), osOf(String(r.platform)));
   }
   for (const list of versionsOf.values())
     list.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
@@ -273,13 +306,13 @@ export async function listPage(
     versionsOf,
     platformsOf,
     trends,
-    chart: at(4).map((r) => ({ day: Number(r.day), version: String(r.version), n: Number(r.n) })),
+    chart: byRelease(at(4)),
     versions,
-    platforms: at(6).map((r) => String(r.v)),
+    platforms: [...new Set(at(6).map((r) => osOf(String(r.v))))].toSorted(),
   };
 }
 
-/** One fingerprint's reports per day and version over CHART_DAYS, plus the global version order. */
+/** One fingerprint's reports per day and release over CHART_DAYS, plus the global release order. */
 export async function dailyFor(
   db: D1Database,
   fingerprint: string,
@@ -288,19 +321,15 @@ export async function dailyFor(
   const res = await db.batch<Row>([
     db
       .prepare(
-        `SELECT day, version, SUM(count) AS n FROM daily_counts
-         WHERE fingerprint = ? AND day > ? GROUP BY day, version`,
+        `SELECT day, version, platform, SUM(count) AS n FROM daily_counts
+         WHERE fingerprint = ? AND day > ? GROUP BY day, version, platform`,
       )
       .bind(fingerprint, today - CHART_DAYS),
     db.prepare(VERSIONS_SQL),
   ]);
   return {
-    chart: (res[0]?.results ?? []).map((r) => ({
-      day: Number(r.day),
-      version: String(r.version),
-      n: Number(r.n),
-    })),
-    versions: orderVersions((res[1]?.results ?? []) as { v: string; first_day: number }[]),
+    chart: byRelease(res[0]?.results ?? []),
+    versions: orderReleases((res[1]?.results ?? []) as { v: string; first_day: number }[]),
   };
 }
 

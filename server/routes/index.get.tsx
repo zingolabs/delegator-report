@@ -40,13 +40,15 @@ defineRouteMeta({
         name: "version",
         in: "query",
         schema: { type: "string" },
-        description: "fingerprints reported on this app version",
+        description:
+          'a release ("0.0.7", any build number) or one exact version string ("0.0.7 (43)")',
       },
       {
         name: "platform",
         in: "query",
         schema: { type: "string" },
-        description: "fingerprints reported on this platform; with version, on both at once",
+        description:
+          'an OS ("ios", any OS version) or one exact platform string ("ios 26.7.1"); with version, on both at once',
       },
       {
         name: "sort",
