@@ -47,11 +47,60 @@
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
 }
+/* Motion tokens. Stronger than the CSS keywords; `ease-out` and `ease-in-out` utilities use them. */
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
 @layer base {
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/*
+ * Page-to-page motion without a script. Search, filters and sorting are plain navigations;
+ * the browser cross-fades the documents and moves the parts that carry a view-transition-name:
+ * table rows (one name per fingerprint) and the active-filter pills. Browsers without
+ * cross-document view transitions just load the next page.
+ */
+@view-transition {
+  navigation: auto;
+}
+.vt-row {
+  view-transition-class: row;
+}
+.vt-pill {
+  view-transition-class: pill;
+}
+::view-transition-group(root) {
+  animation-duration: 150ms;
+  animation-timing-function: ease;
+}
+/* On-screen movement: ease-in-out. */
+::view-transition-group(.row) {
+  animation-duration: 240ms;
+  animation-timing-function: var(--ease-in-out);
+}
+::view-transition-group(.pill) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-in-out);
+}
+/* A row that is only on one side enters or leaves: ease-out, and the exit is the faster one. */
+::view-transition-new(.row):only-child {
+  animation-duration: 180ms;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(.row):only-child {
+  animation-duration: 120ms;
+  animation-timing-function: var(--ease-out);
+}
+/* Reduced motion keeps the cross-fade and drops the movement. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation-duration: 0s;
   }
 }

@@ -17,7 +17,7 @@ from the route metadata. The raw spec is at `/_openapi.json`.
 | token          | who holds it         | grants                                    |
 | -------------- | -------------------- | ----------------------------------------- |
 | `REPORT_TOKEN` | the app, as a header | `POST /report`, create or bump count only |
-| `READ_TOKEN`   | feed readers, agents | feed, page, `/view`, `/queue`             |
+| `READ_TOKEN`   | feed readers, agents | list, feed, page, `/view`, `/queue`       |
 | `WRITE_TOKEN`  | admins, agent runner | `POST /triage`                            |
 
 The report token ships inside a public app, so it is a noise filter and a rotation handle, not
@@ -37,8 +37,14 @@ Always `204`, even when the report is dropped. Do not await, retry, or show fail
 
 ## For humans
 
-Subscribe a feed reader to `/feed.xml?key=<READ_TOKEN>`. Each entry links to a page with the
-full report. New crash types appear once. A recurring crash updates its entry.
+Open `/?key=<READ_TOKEN>` for the list of all fingerprints. The page has a search bar, filters
+(status, build, platform) and sortable columns (count, last seen). All of them are
+query parameters, so a filtered view is a link you can bookmark. Each row links to a page with
+the full report.
+
+Subscribe a feed reader to `/feed.xml?key=<READ_TOKEN>` to get new crashes as they arrive. Each
+entry links to the same report page. New crash types appear once. A recurring crash updates its
+entry.
 
 ## For agents
 

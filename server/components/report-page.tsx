@@ -30,12 +30,22 @@ interface BodyProps {
 
 interface Props extends BodyProps {
   feedHref?: string;
+  /** The list at `/`, with the reader's key. */
+  homeHref?: string;
 }
 
 /** One fingerprint as a full HTML document. The <link> target of a feed entry. */
-export function ReportPage({ row, occurrences, events, feedHref }: Props) {
+export function ReportPage({ row, occurrences, events, feedHref, homeHref }: Props) {
   return (
     <Layout title={`${reportTitle(row)} · delegator-report`} feedHref={feedHref}>
+      {homeHref ? (
+        <a
+          href={homeHref}
+          class="-mb-2 self-start text-sm text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline"
+        >
+          ← All reports
+        </a>
+      ) : null}
       <ReportBody row={row} occurrences={occurrences} events={events} />
     </Layout>
   );
